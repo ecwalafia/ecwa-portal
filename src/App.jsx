@@ -2494,9 +2494,10 @@ function ForgotPassword({ users, pwdReqs, setPwdReqs, onBack }) {
 function PwdResetManager({ pwdReqs, setPwdReqs, users, setUsers, toast }) {
   const pending = pwdReqs.filter(r=>r.status==="pending");
   const [sel,setSel]=useState(null); const [newPw,setNewPw]=useState("");
-  const resolve=()=>{
+  const resolve=async ()=>{
     if(!newPw||newPw.length<6){toast("Password must be at least 6 characters.","danger");return;}
-    setUsers(us=>us.map(u=>u.email.toLowerCase()===sel.email.toLowerCase()?{...u,password:newPw,mustChangePassword:true}:u));
+    const hashedPw = await hashPassword(newPw);
+    setUsers(us=>us.map(u=>u.email.toLowerCase()===sel.email.toLowerCase()?{...u,password:hashedPw,mustChangePassword:true}:u));
     setPwdReqs(rs=>rs.map(r=>r.id===sel.id?{...r,status:"resolved",newPassword:"[set]",resolvedDate:today()}:r));
     toast("✅ Password reset. Staff must change on next login.");setSel(null);setNewPw("");
   };
@@ -2536,7 +2537,7 @@ function SignUp({ users, lccs, setLccs, onSignUp, onGo }) {
   const [er,setEr]=useState(""); const [ok,setOk]=useState(false);
   const s=k=>e=>setF(p=>({...p,[k]:e.target.value}));
 
-  const go=()=>{
+  const go=async ()=>{
     setEr("");
     if(!f.name||!f.email||!f.pw||!f.pw2){setEr("Please fill in all required fields.");return;}
     if(!f.email.includes("@")){setEr("Please enter a valid email.");return;}
@@ -2553,9 +2554,10 @@ function SignUp({ users, lccs, setLccs, onSignUp, onGo }) {
     const finalLcc=cat==="pastor"?(f.lcc==="__new__"?f.newLcc:f.lcc):undefined;
     const roleObj = OFFICE_ROLES.find(r=>r.title===f.jobTitle);
     const role = cat==="pastor"?"pastor":cat==="lo"?"lo":(roleObj?.role||"staff");
+    const hashedPw = await hashPassword(f.pw);
 
     onSignUp({
-      name:f.name,email:f.email,password:f.pw,role,category:cat,
+      name:f.name,email:f.email,password:hashedPw,role,category:cat,
       phone:f.phone,dob:f.dob||undefined,doj:f.doj||undefined,
       dept:cat==="office"?f.dept:undefined,
       jobTitle:cat==="office"?f.jobTitle:undefined,
@@ -2564,8 +2566,8 @@ function SignUp({ users, lccs, setLccs, onSignUp, onGo }) {
       lcc:cat==="pastor"?finalLcc:undefined,
       lcc_overseen:cat==="lo"?f.lcc_overseen:undefined,
       gradeLevel:f.gradeLevel||undefined,
-      gradePending:true, // always pending until verified
-      approved:false, // all new accounts pending
+      gradePending:true,
+      approved:false,
       docs:{},customDocSections:[],transferHistory:[],
     });
     setOk(true);
@@ -2707,43 +2709,34 @@ function SignIn({ users, setUsers, onLogin, onGo, pwdReqs, setPwdReqs }) {
         {er&&<div className="err-box">{er}</div>}
         <div><label style={{color:"rgba(255,255,255,0.5)"}}>New Password *</label><input type="password" placeholder="Min. 6 characters" value={newPw} onChange={e=>setNewPw(e.target.value)}/></div>
         <div><label style={{color:"rgba(255,255,255,0.5)"}}>Confirm New Password *</label><input type="password" placeholder="Repeat password" value={newPw2} onChange={e=>setNewPw2(e.target.value)}/></div>
-        <button className="btn btn-gold" style={{width:"100%"}} onClick={()=>{
+        <button className="btn btn-gold" style={{width:"100%"}} onClick={async ()=>{
           setEr("");
           if(newPw.length<6){setEr("Password must be at least 6 characters.");return;}
           if(newPw!==newPw2){setEr("Passwords do not match.");return;}
-          setUsers(us=>us.map(u=>u.id===changeMode.id?{...u,password:newPw,mustChangePassword:false}:u));
-          onLogin({...changeMode,password:newPw,mustChangePassword:false});
+          const hashedPw = await hashPassword(newPw);
+          setUsers(us=>us.map(u=>u.id===changeMode.id?{...u,password:hashedPw,mustChangePassword:false}:u));
+          onLogin({...changeMode,password:hashedPw,mustChangePassword:false});
         }}>Save New Password & Sign In →</button>
       </div>
     </div>
   );
 
-  const go=()=>{
+  const go=async ()=>{
     setEr("");
     if(!em||!pw){setEr("Please enter your email and password.");return;}
-    // Check regular user accounts first
     let u = users.find(u=>u.email.toLowerCase()===em.toLowerCase());
-    // If not found, check LO appointment credentials
     if(!u){
       const loUser = users.find(u=>u.loAppointment?.active&&u.loAppointment?.email.toLowerCase()===em.toLowerCase());
       if(loUser){
-        if(loUser.loAppointment.password!==pw){setEr("Incorrect password.");return;}
-        // Log in as LO — create a synthetic session object
-        const loSession = {
-          ...loUser,
-          role:"lo",
-          category:"lo",
-          lcc_overseen: loUser.loAppointment.lcc_overseen,
-          email: loUser.loAppointment.email,
-          _loLogin: true,
-          _pastorId: loUser.id,
-        };
-        onLogin(loSession);
-        return;
+        const ok = await checkPassword(pw, loUser.loAppointment.password);
+        if(!ok){setEr("Incorrect password.");return;}
+        const loSession = { ...loUser, role:"lo", category:"lo", lcc_overseen:loUser.loAppointment.lcc_overseen, email:loUser.loAppointment.email, _loLogin:true, _pastorId:loUser.id };
+        onLogin(loSession); return;
       }
       setEr("No account found with this email.");return;
     }
-    if(u.password!==pw){setEr("Incorrect password.");return;}
+    const ok = await checkPassword(pw, u.password);
+    if(!ok){setEr("Incorrect password.");return;}
     if(!u.approved){setEr("Your account is pending admin approval.");return;}
     if(u.mustChangePassword){setChangeMode(u);return;}
     onLogin(u);
@@ -2931,6 +2924,17 @@ function Dashboard({ user, users, setUsers, requests, setRequests, leaves, setLe
       )}
 
       {idCard&&<IDCard staff={myStaffRecord||user} onClose={()=>setIdCard(false)}/>}
+
+      {/* KrizTechs Footer */}
+      <div style={{textAlign:"center",padding:"20px 16px 12px",marginTop:8}}>
+        <div style={{display:"inline-flex",alignItems:"center",gap:8,background:"#fff",border:"1px solid #e8e4dc",borderRadius:20,padding:"6px 16px",boxShadow:"0 2px 8px rgba(11,31,58,0.06)"}}>
+          <span style={{fontSize:13}}>⚡</span>
+          <span style={{color:"#aaa",fontSize:11}}>Powered by</span>
+          <span style={{color:"#c9a84c",fontSize:12,fontWeight:700,letterSpacing:0.5}}>KrizTechs</span>
+          <span style={{color:"#ddd",fontSize:11}}>·</span>
+          <a href="tel:08166646683" style={{color:"#888",fontSize:11,textDecoration:"none"}}>08166646683</a>
+        </div>
+      </div>
     </div>
   );
 }
@@ -2940,6 +2944,18 @@ async function sbSave(key, value) {
   try {
     await supabase.from("app_state").upsert({ key, value, updated_at: new Date().toISOString() });
   } catch(e) { console.error("Supabase save error:", e); }
+}
+
+// ── Password hashing (SHA-256 via Web Crypto API — no library needed) ─────────
+async function hashPassword(plain) {
+  const enc = new TextEncoder();
+  const buf = await window.crypto.subtle.digest("SHA-256", enc.encode(plain));
+  return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,"0")).join("");
+}
+async function checkPassword(plain, hashed) {
+  // Support both plain (legacy demo) and hashed passwords
+  if(hashed && hashed.length === 64) return (await hashPassword(plain)) === hashed;
+  return plain === hashed; // fallback for demo accounts
 }
 
 // ── Root ───────────────────────────────────────────────────────────────────────
@@ -3020,6 +3036,16 @@ export default function App() {
         ?<SignIn users={users} setUsers={setUsers} onLogin={setMe} onGo={setScr} pwdReqs={pwdReqs} setPwdReqs={setPwdReqs}/>
         :<SignUp users={users} lccs={lccs} setLccs={setLccs} onSignUp={u=>setUsers(us=>[...us,{id:Math.max(0,...us.map(x=>x.id))+1,...u}])} onGo={setScr}/>
       }
+      {/* KrizTechs Branding */}
+      <div style={{marginTop:32,textAlign:"center"}} className="fade-in">
+        <div style={{display:"inline-flex",alignItems:"center",gap:8,background:"rgba(255,255,255,0.05)",border:"1px solid rgba(201,168,76,0.15)",borderRadius:20,padding:"8px 18px"}}>
+          <span style={{fontSize:14}}>⚡</span>
+          <span style={{color:"rgba(255,255,255,0.35)",fontSize:11,letterSpacing:0.5}}>Powered by</span>
+          <span style={{color:"#c9a84c",fontSize:12,fontWeight:700,letterSpacing:1}}>KrizTechs</span>
+          <span style={{color:"rgba(255,255,255,0.2)",fontSize:11}}>·</span>
+          <a href="tel:08166646683" style={{color:"rgba(201,168,76,0.7)",fontSize:11,textDecoration:"none",letterSpacing:0.5}}>08166646683</a>
+        </div>
+      </div>
     </div>
   );
 }
