@@ -71,6 +71,70 @@ const GlobalStyles = () => (
     .notif-panel{position:absolute;top:52px;right:16px;width:340px;background:#fff;border-radius:14px;box-shadow:0 8px 40px rgba(11,31,58,0.18);z-index:200;overflow:hidden;border:1px solid #e8e4dc;}
     @media print{.no-print{display:none!important;}.print-only{display:block!important;}}
     .print-only{display:none;}
+
+    /* ── MOBILE RESPONSIVE ─────────────────────────────────────────────────── */
+    @media(max-width:768px){
+
+      /* Base layout */
+      .app-root{font-size:14px;}
+
+      /* Cards fill screen on mobile */
+      .card{border-radius:10px;margin-bottom:12px;}
+
+      /* Modals take full screen on mobile */
+      .overlay{padding:0;align-items:flex-end;}
+      .modal{max-width:100%!important;width:100%!important;max-height:92vh;border-radius:20px 20px 0 0;}
+
+      /* Buttons bigger for touch */
+      .btn{padding:12px 18px;font-size:14px;width:100%;}
+      .btn-sm{padding:8px 14px;font-size:12px;width:auto;}
+      .btn-outline,.btn-red,.btn-gold{width:100%;}
+
+      /* Button rows — stack on mobile */
+      div[style*="display:flex"][style*="gap"]:has(.btn){flex-direction:column;}
+
+      /* Inputs full width, bigger touch targets */
+      input,select,textarea{font-size:16px!important;padding:12px 14px;}
+
+      /* Section headers */
+      .section-hdr{font-size:13px;padding:12px 16px;}
+
+      /* Staff cards */
+      .scard{padding:12px;}
+
+      /* Notifications panel full width on mobile */
+      .notif-panel{position:fixed;top:auto;bottom:0;left:0;right:0;width:100%;border-radius:20px 20px 0 0;max-height:70vh;}
+
+      /* Tables scroll horizontally */
+      table{font-size:12px;}
+      td,th{padding:8px 10px!important;}
+
+      /* Doc rows */
+      .doc-row{flex-wrap:wrap;gap:8px;}
+
+      /* Alert banners */
+      .alert-banner,.warn-banner{font-size:12px;padding:8px 14px;}
+
+      /* Stat cards grid */
+      .stat-grid{grid-template-columns:repeat(2,1fr)!important;}
+
+      /* Hide text on small buttons */
+      .btn-ghost{padding:6px 10px;font-size:11px;}
+
+      /* Full width containers */
+      .fade-in{padding:0 2px;}
+    }
+
+    /* Small phones */
+    @media(max-width:400px){
+      .modal{max-height:96vh;}
+      input,select,textarea{font-size:16px!important;}
+    }
+
+    /* Desktop — keep original feel */
+    @media(min-width:769px){
+      .mobile-tabs{display:none!important;}
+    }
   `}</style>
 );
 
@@ -2794,42 +2858,45 @@ function Dashboard({ user, users, setUsers, requests, setRequests, leaves, setLe
           {retWarn<=0?"🔴 Your retirement is due — please contact Admin & Personnel":`⚠️ You have ${retWarn} year${retWarn>1?"s":""} to retirement`}
         </div>
       )}
-      <header style={{background:"#0b1f3a",padding:"0 20px",display:"flex",alignItems:"center",justifyContent:"space-between",height:60,position:"sticky",top:0,zIndex:100}}>
-        <div style={{display:"flex",alignItems:"center",gap:12}}>
-          <img src={LOGO} alt="ECWA" style={{width:38,height:38,borderRadius:"50%",objectFit:"cover",border:"1.5px solid #c9a84c"}}/>
-          <div><div style={{fontFamily:"Georgia,serif",color:"#fff",fontSize:16,fontWeight:700}}>ECWA Lafia DCC</div><div style={{fontSize:10,color:"rgba(255,255,255,0.38)"}}>Staff Management Portal</div></div>
-        </div>
-        <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-          {tabs.length>1&&(
-            <div className="tab-bar" style={{background:"rgba(255,255,255,0.08)"}}>
-              {tabs.map(t=>(
-                <button key={t.id} className={`tab ${mod===t.id?"active":""}`} onClick={()=>setMod(t.id)}>
-                  {t.icon} {t.label}
-                  {t.badge>0&&<span className="pulse" style={{marginLeft:4,background:"#c9a84c",color:"#fff",borderRadius:10,padding:"1px 6px",fontSize:10}}>{t.badge}</span>}
-                </button>
-              ))}
+      <header style={{background:"#0b1f3a",position:"sticky",top:0,zIndex:100}}>
+        {/* Top row: logo + user actions */}
+        <div style={{padding:"0 16px",display:"flex",alignItems:"center",justifyContent:"space-between",height:56}}>
+          <div style={{display:"flex",alignItems:"center",gap:10}}>
+            <img src={LOGO} alt="ECWA" style={{width:34,height:34,borderRadius:"50%",objectFit:"cover",border:"1.5px solid #c9a84c",flexShrink:0}}/>
+            <div><div style={{fontFamily:"Georgia,serif",color:"#fff",fontSize:14,fontWeight:700,lineHeight:1.2}}>ECWA Lafia DCC</div><div style={{fontSize:9,color:"rgba(255,255,255,0.38)"}}>Staff Portal</div></div>
+          </div>
+          <div style={{display:"flex",alignItems:"center",gap:6}}>
+            {/* Notification bell */}
+            <div style={{position:"relative"}}>
+              <button className="btn-ghost" style={{fontSize:16,padding:"5px 8px"}} onClick={()=>setNotifOpen(o=>!o)}>
+                🔔{unreadCount>0&&<span style={{background:"#c0392b",color:"#fff",borderRadius:10,padding:"1px 5px",fontSize:10,marginLeft:2}}>{unreadCount}</span>}
+              </button>
+              {notifOpen&&<NotifPanel notifs={notifs} onRead={markRead} onClose={()=>setNotifOpen(false)}/>}
             </div>
-          )}
-          {/* Notification bell */}
-          <div style={{position:"relative"}}>
-            <button className="btn-ghost" style={{fontSize:16,padding:"5px 10px"}} onClick={()=>setNotifOpen(o=>!o)}>
-              🔔 {unreadCount>0&&<span style={{background:"#c0392b",color:"#fff",borderRadius:10,padding:"1px 5px",fontSize:10,marginLeft:3}}>{unreadCount}</span>}
-            </button>
-            {notifOpen&&<NotifPanel notifs={notifs} onRead={markRead} onClose={()=>setNotifOpen(false)}/>}
+            <button className="btn-ghost" style={{fontSize:11,padding:"5px 8px"}} onClick={()=>setIdCard(true)}>📋</button>
+            <div style={{textAlign:"right",maxWidth:110}}>
+              <div style={{color:"#fff",fontSize:11,fontWeight:600,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{user.name.split(" ").slice(-1)[0]}</div>
+              <div style={{color:"#c9a84c",fontSize:9,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{roleDisplay(user.role)}</div>
+            </div>
+            <button className="btn-ghost" style={{fontSize:11,padding:"5px 8px"}} onClick={onLogout}>Exit</button>
           </div>
-          {/* ID Card button */}
-          <button className="btn-ghost" style={{fontSize:12}} onClick={()=>setIdCard(true)}>📋 Bio Data</button>
-          <div style={{textAlign:"right"}}>
-            <div style={{color:"#fff",fontSize:13,fontWeight:600}}>{user.name}</div>
-            <div style={{color:"#c9a84c",fontSize:11}}>{roleDisplay(user.role)}{isPastor?` · ${user.lcc} LCC`:isLO?` · ${user.lcc_overseen} LCC`:""}</div>
-          </div>
-          <button className="btn-ghost" onClick={onLogout}>Sign Out</button>
         </div>
+        {/* Bottom row: tabs scrollable */}
+        {tabs.length>1&&(
+          <div style={{overflowX:"auto",display:"flex",gap:0,borderTop:"1px solid rgba(255,255,255,0.08)",scrollbarWidth:"none"}} className="mobile-tabs">
+            {tabs.map(t=>(
+              <button key={t.id} onClick={()=>setMod(t.id)} style={{flexShrink:0,padding:"8px 14px",background:"none",border:"none",color:mod===t.id?"#c9a84c":"rgba(255,255,255,0.5)",fontSize:11,fontWeight:mod===t.id?700:400,borderBottom:mod===t.id?"2px solid #c9a84c":"2px solid transparent",cursor:"pointer",whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:4}}>
+                {t.icon} {t.label}
+                {t.badge>0&&<span style={{background:"#c9a84c",color:"#fff",borderRadius:10,padding:"1px 5px",fontSize:9}}>{t.badge}</span>}
+              </button>
+            ))}
+          </div>
+        )}
       </header>
 
       {/* Home dashboard with pending summary */}
       {mod===null&&(
-        <div style={{maxWidth:820,margin:"40px auto",padding:"0 20px"}} className="fade-in">
+        <div style={{maxWidth:820,margin:"0 auto",padding:"20px 12px"}} className="fade-in">
           <div style={{textAlign:"center",marginBottom:28}}>
             <div style={{fontFamily:"Georgia,serif",color:"#0b1f3a",fontSize:22,fontWeight:700,marginBottom:6}}>Welcome, {user.name.split(" ").slice(-1)[0]}</div>
             <p style={{color:"#888",fontSize:14}}>Select a module to get started</p>
@@ -2844,7 +2911,7 @@ function Dashboard({ user, users, setUsers, requests, setRequests, leaves, setLe
               {canPwdMgr&&pwdReqs.filter(r=>r.status==="pending").length>0&&<div onClick={()=>setMod("profile")} style={{cursor:"pointer",background:"rgba(192,57,43,0.2)",border:"1px solid rgba(192,57,43,0.4)",borderRadius:10,padding:"8px 14px",textAlign:"center"}}><div style={{fontFamily:"Georgia,serif",color:"#e74c3c",fontSize:20,fontWeight:700}}>{pwdReqs.filter(r=>r.status==="pending").length}</div><div style={{color:"rgba(255,255,255,0.5)",fontSize:11}}>Pwd Resets</div></div>}
             </div>
           )}
-          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:14}}>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:12}}>
             {tabs.map(t=>(
               <div key={t.id} className="card" style={{padding:22,cursor:"pointer",border:"2px solid transparent",transition:"all 0.2s"}} onClick={()=>setMod(t.id)} onMouseEnter={e=>{e.currentTarget.style.borderColor="#c9a84c";e.currentTarget.style.transform="translateY(-3px)";}} onMouseLeave={e=>{e.currentTarget.style.borderColor="transparent";e.currentTarget.style.transform="none";}}>
                 <div style={{fontSize:28,marginBottom:8}}>{t.icon}</div>
@@ -2857,8 +2924,8 @@ function Dashboard({ user, users, setUsers, requests, setRequests, leaves, setLe
       )}
 
       {mod&&(
-        <div style={{padding:"22px 20px",maxWidth:1060,margin:"0 auto"}}>
-          {tabs.length>1&&<div style={{marginBottom:18,display:"flex",alignItems:"center",gap:8}}><button onClick={()=>setMod(null)} style={{background:"none",border:"none",color:"#c9a84c",cursor:"pointer",fontSize:13,fontWeight:600,padding:0}}>← Modules</button><span style={{color:"#bbb",fontSize:13}}>/</span><span style={{fontSize:13,color:"#0b1f3a",fontWeight:600}}>{tabs.find(t=>t.id===mod)?.label}</span></div>}
+        <div style={{padding:"16px 12px",maxWidth:1060,margin:"0 auto"}}>
+          {tabs.length>1&&<div style={{marginBottom:14,display:"flex",alignItems:"center",gap:8}}><button onClick={()=>setMod(null)} style={{background:"none",border:"none",color:"#c9a84c",cursor:"pointer",fontSize:13,fontWeight:600,padding:0}}>← Modules</button><span style={{color:"#bbb",fontSize:13}}>/</span><span style={{fontSize:13,color:"#0b1f3a",fontWeight:600}}>{tabs.find(t=>t.id===mod)?.label}</span></div>}
           {mod==="finance"&&<FinanceMod user={user} requests={requests} setRequests={setRequests} toast={toast}/>}
           {mod==="leave"&&<LeaveMod user={user} users={users} leaves={leaves} setLeaves={setLeaves} toast={toast}/>}
           {mod==="sunday"&&<SundayMod user={user} users={users} sundayReports={sundayReports} setSundayReports={setSundayReports} toast={toast}/>}
@@ -2954,7 +3021,7 @@ export default function App() {
   );
 
   return(
-    <div style={{minHeight:"100vh",background:"linear-gradient(135deg,#0b1f3a 0%,#1a3a5c 60%,#0d2b47 100%)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:24,position:"relative",overflow:"hidden"}}>
+    <div style={{minHeight:"100vh",background:"linear-gradient(135deg,#0b1f3a 0%,#1a3a5c 60%,#0d2b47 100%)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"16px",position:"relative",overflow:"hidden"}}>
       <GlobalStyles/>
       <div style={{position:"absolute",width:350,height:350,border:"1px solid rgba(201,168,76,0.08)",borderRadius:"50%",top:-80,right:-80}}/>
       <div style={{position:"absolute",width:250,height:250,border:"1px solid rgba(201,168,76,0.06)",borderRadius:"50%",bottom:-60,left:-60}}/>
