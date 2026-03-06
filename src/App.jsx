@@ -667,13 +667,15 @@ function FinanceMod({ user, requests, setRequests, toast }) {
   const act=(id,action,sig,note)=>{
     setRequests(rs=>rs.map(r=>{
       if(r.id!==id)return r;
-      const actRole = ["secretary","ads","conf_secretary"].includes(user.role)?"secretary":user.role==="accountant"?"finance":user.role;
-      const s2={...r.signatures,[actRole]:sig},c2={...r.comments,[actRole]:note||""};
-      if(action==="reject"){toast("Request rejected.","danger");return{...r,status:"rejected",signatures:s2,comments:c2};}
-      if(["chairman","vice_chairman"].includes(user.role)){toast("🎉 Fully approved!");return{...r,status:"approved",signatures:s2,comments:c2};}
-      toast("✅ Forwarded to next stage.");
       const actKey=["secretary","ads","conf_secretary"].includes(user.role)?"secretary":user.role==="accountant"?"finance":user.role;
-      return{...r,status:FNEXT[actKey],signatures:s2,comments:c2};
+      const s2={...r.signatures,[actKey]:sig},c2={...r.comments,[actKey]:note||""};
+      if(action==="reject"){toast("Request rejected.","danger");return{...r,status:"rejected",signatures:s2,comments:c2};}
+      // Only chairman/vice_chairman can fully approve — everyone else goes to next stage
+      if(["chairman","vice_chairman"].includes(user.role)){toast("🎉 Fully approved!");return{...r,status:"approved",signatures:s2,comments:c2};}
+      const nextStatus = FNEXT[actKey];
+      if(!nextStatus){toast("Approval error — contact admin.","danger");return r;}
+      toast("✅ Forwarded to next stage.");
+      return{...r,status:nextStatus,signatures:s2,comments:c2};
     }));
   };
 
@@ -2747,31 +2749,15 @@ function SignIn({ users, setUsers, onLogin, onGo, pwdReqs, setPwdReqs }) {
     onLogin(u);
   };
   return(
-    <div style={{maxWidth:400,width:"100%",margin:"0 auto"}} className="fade-in">
-      <h2 style={{fontFamily:"Georgia,serif",color:"#fff",fontSize:26,marginBottom:4}}>Welcome Back</h2>
-      <p style={{color:"rgba(255,255,255,0.4)",fontSize:13,marginBottom:22}}>Sign in to your ECWA Lafia DCC account</p>
-      <div style={{background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:14,padding:24,display:"flex",flexDirection:"column",gap:14}}>
+    <div style={{maxWidth:400,width:"100%",margin:"0 auto",textAlign:"center"}} className="fade-in">
+      <h2 style={{fontFamily:"Georgia,serif",color:"#fff",fontSize:26,marginBottom:4,textAlign:"center"}}>Welcome Back</h2>
+      <p style={{color:"rgba(255,255,255,0.4)",fontSize:13,marginBottom:22,textAlign:"center"}}>Sign in to your ECWA Lafia DCC account</p>
+      <div style={{background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:14,padding:24,display:"flex",flexDirection:"column",gap:14,textAlign:"left"}}>
         {er&&<div className="err-box">{er}</div>}
         <div><label style={{color:"rgba(255,255,255,0.5)"}}>Email Address</label><input type="email" placeholder="your@email.com" value={em} onChange={e=>setEm(e.target.value)} onKeyDown={e=>e.key==="Enter"&&go()}/></div>
         <div><label style={{color:"rgba(255,255,255,0.5)"}}>Password</label><div style={{position:"relative"}}><input type={showPw?"text":"password"} placeholder="Your password" value={pw} onChange={e=>setPw(e.target.value)} onKeyDown={e=>e.key==="Enter"&&go()} style={{paddingRight:48}}/><button type="button" onClick={()=>setShowPw(p=>!p)} style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",cursor:"pointer",fontSize:16,color:"rgba(255,255,255,0.4)",padding:4}}>{showPw?"🙈":"👁️"}</button></div></div>
         <button className="btn btn-gold" style={{width:"100%",marginTop:4}} onClick={go}>Sign In →</button>
         <div style={{textAlign:"right"}}><button className="link-btn" style={{fontSize:12}} onClick={()=>setForgot(true)}>Forgot password?</button></div>
-        <div style={{background:"rgba(201,168,76,0.08)",border:"1px solid rgba(201,168,76,0.2)",borderRadius:8,padding:"12px 14px"}}>
-          <div style={{fontSize:11,color:"#c9a84c",fontWeight:700,marginBottom:8,textTransform:"uppercase",letterSpacing:0.5}}>Demo Accounts — Click to fill</div>
-          {users.filter(u=>u.approved).map(u=>(
-            <div key={u.id} onClick={()=>{setEm(u.email);setPw(u.password);}} style={{display:"flex",justifyContent:"space-between",fontSize:11,color:"rgba(255,255,255,0.4)",marginBottom:4,cursor:"pointer",padding:"3px 0",borderBottom:"1px solid rgba(255,255,255,0.05)"}}>
-              <span>{u.email}</span>
-              <span style={{color:"rgba(201,168,76,0.6)"}}>{u.category==="pastor"?`⛪ ${u.rank||"Pastor"}`:`🏢 ${roleDisplay(u.role)}`}</span>
-            </div>
-          ))}
-          {/* LO credentials */}
-          {users.filter(u=>u.loAppointment?.active).map(u=>(
-            <div key={"lo_"+u.id} onClick={()=>{setEm(u.loAppointment.email);setPw(u.loAppointment.password);}} style={{display:"flex",justifyContent:"space-between",fontSize:11,color:"rgba(255,255,255,0.4)",marginBottom:4,cursor:"pointer",padding:"3px 0",borderBottom:"1px solid rgba(255,255,255,0.05)"}}>
-              <span style={{color:"rgba(41,128,185,0.8)"}}>{u.loAppointment.email}</span>
-              <span style={{color:"rgba(41,128,185,0.6)"}}>LO — {u.loAppointment.lcc_overseen}</span>
-            </div>
-          ))}
-        </div>
         <div className="divider"><span>new here?</span></div>
         <div style={{textAlign:"center"}}><button className="link-btn" onClick={()=>onGo("signup")}>Create an account</button></div>
       </div>
