@@ -1418,7 +1418,7 @@ function SundayMod({ user, users, sundayReports, setSundayReports, toast }) {
 
   const submitReport=(f)=>{
     const id="SR-"+String(sundayReports.length+1).padStart(3,"0");
-    setSundayReports(r=>[...r,{...f,id,pastorId:user.id,pastorName:user.name,lcc:user.lcc,lc_ph:user.lc_ph,submitted:true,appeal:null}]);
+    setSundayReports(r=>[...r,{...f,id,pastorId:user.id,pastorName:user.name,pastorEmail:user.email,lcc:user.lcc,lc_ph:user.lc_ph,submitted:true,appeal:null}]);
     toast("✅ Sunday report submitted.");setForm(false);
   };
 
@@ -2977,48 +2977,55 @@ function PwdResetManager({ pwdReqs, setPwdReqs, users, setUsers, toast }) {
 function SignUp({ users, lccs, setLccs, onSignUp, onGo }) {
   const [step,setStep]=useState(1); const [cat,setCat]=useState("");
   const [f,setF]=useState({name:"",email:"",pw:"",pw2:"",phone:"",dob:"",doj:"",dept:"",jobTitle:"",role:"",rank:"",lc_ph:"",lcc:"",newLcc:"",lcc_overseen:"",gradeLevel:""});
-  const [er,setEr]=useState(""); const [ok,setOk]=useState(false);
+  const [er,setEr]=useState(""); const [ok,setOk]=useState(false); const [submitting,setSubmitting]=useState(false);
   const [showPw,setShowPw]=useState(false); const [showPw2,setShowPw2]=useState(false);
   const [signatureImage,setSignatureImage]=useState(null); const [showSigPad,setShowSigPad]=useState(false);
-  const sigUploadRef=useRef(null);
+  const sigUploadRef=useRef(null); const errRef=useRef(null);
   const s=k=>e=>setF(p=>({...p,[k]:e.target.value}));
+  const showErr=(msg)=>{setEr(msg);setTimeout(()=>errRef.current?.scrollIntoView({behavior:"smooth",block:"center"}),50);};
   const deptRoles = f.dept ? OFFICE_ROLES.filter(r=>r.dept===f.dept) : OFFICE_ROLES;
 
   const go=async ()=>{
-    setEr("");
-    if(!f.name||!f.email||!f.pw||!f.pw2){setEr("Please fill in all required fields.");return;}
-    if(!f.email.includes("@")){setEr("Please enter a valid email.");return;}
-    if(f.pw.length<6){setEr("Password must be at least 6 characters.");return;}
-    if(f.pw!==f.pw2){setEr("Passwords do not match.");return;}
-    if(users.find(u=>u.email.toLowerCase()===f.email.toLowerCase())){setEr("This email is already registered.");return;}
-    if(cat==="office"&&!f.jobTitle){setEr("Please select a job title.");return;}
-    if(cat==="office"&&!f.dept){setEr("Please select your department.");return;}
-    if(cat==="pastor"&&(!f.rank||!f.lcc)){setEr("Please fill in your rank and LCC.");return;}
-    if(cat==="pastor"&&!f.lc_ph){setEr("Please select your LC / Prayer House.");return;}
-    if(cat==="pastor"&&f.lc_ph==="__other__"&&!f.newLcPh){setEr("Please type your church / prayer house name.");return;}
-    if(cat==="pastor"&&f.lcc==="__new__"&&!f.newLcc){setEr("Please type the new LCC name.");return;}
-    if(!signatureImage){setEr("Please draw your signature before submitting.");return;}
-
-    if(cat==="pastor"&&f.newLcc&&!lccs.includes(f.newLcc)){setLccs(l=>[...l,f.newLcc]);}
-    const finalLcc=cat==="pastor"?(f.lcc==="__new__"?f.newLcc:f.lcc):undefined;
-    const finalLcPh=cat==="pastor"?(f.lc_ph==="__other__"?f.newLcPh:f.lc_ph):undefined;
-    const roleObj = OFFICE_ROLES.find(r=>r.title===f.jobTitle);
-    const role = cat==="pastor"?"pastor":(roleObj?.role||"staff");
-    const hashedPw = await hashPassword(f.pw);
-    onSignUp({
-      name:f.name,email:f.email,password:hashedPw,role,category:cat,
-      phone:f.phone,dob:f.dob||undefined,doj:f.doj||undefined,
-      dept:cat==="office"?f.dept:undefined,
-      jobTitle:cat==="office"?f.jobTitle:undefined,
-      rank:cat==="pastor"?f.rank:undefined,
-      lc_ph:cat==="pastor"?finalLcPh:undefined,
-      lcc:cat==="pastor"?finalLcc:undefined,
-      gradeLevel:f.gradeLevel||undefined,
-      gradePending:true, approved:false,
-      signatureImage:signatureImage||null,
-      docs:{},customDocSections:[],transferHistory:[],
-    });
-    setOk(true);
+    showErr("");
+    if(!f.name||!f.email||!f.pw||!f.pw2){showErr("Please fill in all required fields.");return;}
+    if(!f.email.includes("@")){showErr("Please enter a valid email.");return;}
+    if(f.pw.length<6){showErr("Password must be at least 6 characters.");return;}
+    if(f.pw!==f.pw2){showErr("Passwords do not match.");return;}
+    if(users.find(u=>u.email.toLowerCase()===f.email.toLowerCase())){showErr("This email is already registered.");return;}
+    if(cat==="office"&&!f.dept){showErr("Please select your department.");return;}
+    if(cat==="office"&&!f.jobTitle){showErr("Please select a job title.");return;}
+    if(cat==="pastor"&&(!f.rank||!f.lcc)){showErr("Please fill in your rank and LCC.");return;}
+    if(cat==="pastor"&&!f.lc_ph){showErr("Please select your LC / Prayer House.");return;}
+    if(cat==="pastor"&&f.lc_ph==="__other__"&&!f.newLcPh){showErr("Please type your church / prayer house name.");return;}
+    if(cat==="pastor"&&f.lcc==="__new__"&&!f.newLcc){showErr("Please type the new LCC name.");return;}
+    if(!signatureImage){showErr("Please draw your signature before submitting.");return;}
+    try {
+      setSubmitting(true);
+      if(cat==="pastor"&&f.newLcc&&!lccs.includes(f.newLcc)){setLccs(l=>[...l,f.newLcc]);}
+      const finalLcc=cat==="pastor"?(f.lcc==="__new__"?f.newLcc:f.lcc):undefined;
+      const finalLcPh=cat==="pastor"?(f.lc_ph==="__other__"?f.newLcPh:f.lc_ph):undefined;
+      const roleObj = OFFICE_ROLES.find(r=>r.title===f.jobTitle);
+      const role = cat==="pastor"?"pastor":(roleObj?.role||"staff");
+      const hashedPw = await hashPassword(f.pw);
+      onSignUp({
+        name:f.name,email:f.email,password:hashedPw,role,category:cat,
+        phone:f.phone,dob:f.dob||undefined,doj:f.doj||undefined,
+        dept:cat==="office"?f.dept:undefined,
+        jobTitle:cat==="office"?f.jobTitle:undefined,
+        rank:cat==="pastor"?f.rank:undefined,
+        lc_ph:cat==="pastor"?finalLcPh:undefined,
+        lcc:cat==="pastor"?finalLcc:undefined,
+        gradeLevel:f.gradeLevel||undefined,
+        gradePending:true, approved:false,
+        signatureImage:signatureImage||null,
+        docs:{},customDocSections:[],transferHistory:[],
+      });
+      setOk(true);
+    } catch(e) {
+      showErr("Something went wrong. Please try again.");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const selectedLcc = f.lcc==="__new__"?f.newLcc:f.lcc;
@@ -3059,7 +3066,7 @@ function SignUp({ users, lccs, setLccs, onSignUp, onGo }) {
         <div style={{background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:14,padding:24,display:"flex",flexDirection:"column",gap:12}}>
           <button onClick={()=>setStep(1)} style={{background:"none",border:"none",color:"#c9a84c",cursor:"pointer",fontSize:12,fontWeight:600,alignSelf:"flex-start",padding:0}}>← Back</button>
           <div style={{fontSize:13,color:"rgba(255,255,255,0.5)",marginBottom:4}}>{cat==="office"?"🏢 Office Staff Registration":"⛪ Pastor Registration"}</div>
-          {er&&<div className="err-box">{er}</div>}
+          {er&&<div ref={errRef} className="err-box">{er}</div>}
           <div><label style={{color:"rgba(255,255,255,0.5)"}}>Full Name *</label><input placeholder="e.g. Bro. John Danladi" value={f.name} onChange={s("name")}/></div>
           <div><label style={{color:"rgba(255,255,255,0.5)"}}>Email Address *</label><input type="email" placeholder="e.g. john@ecwalafia.org" value={f.email} onChange={s("email")}/></div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
@@ -3135,7 +3142,7 @@ function SignUp({ users, lccs, setLccs, onSignUp, onGo }) {
             <input ref={sigUploadRef} type="file" style={{display:"none"}} accept="image/*" onChange={e=>{const f=e.target.files[0];if(!f)return;const rd=new FileReader();rd.onload=ev=>setSignatureImage(ev.target.result);rd.readAsDataURL(f);e.target.value="";}}/>
           </div>
           <div className="info-box">ℹ️ All accounts are subject to approval by Admin & Personnel before you can sign in.</div>
-          <button className="btn btn-gold" style={{width:"100%",marginTop:4}} onClick={go}>Create Account →</button>
+          <button className="btn btn-gold" style={{width:"100%",marginTop:4,opacity:submitting?0.7:1}} disabled={submitting} onClick={go}>{submitting?"⏳ Creating Account...":"Create Account →"}</button>
           <div className="divider"><span>already have an account?</span></div>
           <div style={{textAlign:"center"}}><button className="link-btn" onClick={()=>onGo("login")}>Sign In instead</button></div>
         </div>
@@ -3235,6 +3242,8 @@ function Dashboard({ user, users, setUsers, requests, setRequests, leaves, setLe
       if(["chairman","vice_chairman"].includes(user.role)) return r.status==="pending_chairman";
       return false;
     }).map(r=>({id:"fin_"+r.id,icon:"💰",title:"Financial request needs your review",body:`${r.requester} — ${money(r.amount)}`,date:r.date,read:false})):[]),
+    // Sunday report appeals pending admin action
+    ...(["secretary","ads","conf_secretary","chairman","accountant"].includes(user.role)?sundayReports.filter(r=>r.appeal&&r.appeal.status==="pending").map(r=>({id:"sra_"+r.id,icon:"⚠️",title:"Sunday report appeal pending",body:`${r.pastorName} — ${r.lc_ph} · ${fdate(r.date)}`,date:r.appeal.date,read:false})):[] ),
     // Password reset requests for admin
     ...(["secretary","ads","conf_secretary","personnel"].includes(user.role)?pwdReqs.filter(r=>r.status==="pending").map(r=>({id:"pwd_"+r.id,icon:"🔐",title:"Password reset request",body:`${r.name} — ${r.email}`,date:r.requestDate,read:false})):[]),
   ];
