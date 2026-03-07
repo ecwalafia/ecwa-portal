@@ -6,30 +6,65 @@ const SUPABASE_URL = "https://ttlfxmutfzdajgfryesn.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR0bGZ4bXV0ZnpkYWpnZnJ5ZXNuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI4MDI2NzUsImV4cCI6MjA4ODM3ODY3NX0.zMriVY2bOMpg5FHrMF2ll7PIuOlJ0imLCjU_Nhhe-z0";
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-// ── EmailJS Config (REST API — no npm package needed) ──────────────────────────
-const EJS_SERVICE      = "service_yn1v1ou";
-const EJS_TPL_APPROVAL = "e6lonk3";
-const EJS_TPL_GENERIC  = "ko82075";
-const EJS_PUBLIC_KEY   = "cyXSI_7PBXxL4b_2L";
+// ── Brevo (formerly Sendinblue) Email API ────────────────────────────────────
+const BREVO_API_KEY  = import.meta.env.VITE_BREVO_KEY;
+const BREVO_SENDER   = { name: "ECWA Lafia DCC", email: "ecwalafiaadmin@gmail.com" };
 
-async function ejsSend(templateId, params) {
+async function brevoSend({ to_name, to_email, email_subject, email_body }) {
+  if(!to_email){ console.warn("brevoSend: no to_email"); return; }
   try {
-    const res = await fetch("https://api.emailjs.com/api/v1.0/email/send", {
+    const res = await fetch("https://api.brevo.com/v3/smtp/email", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ service_id: EJS_SERVICE, template_id: templateId, user_id: EJS_PUBLIC_KEY, template_params: params }),
+      headers: {
+        "Content-Type": "application/json",
+        "api-key": BREVO_API_KEY,
+      },
+      body: JSON.stringify({
+        sender: BREVO_SENDER,
+        to: [{ name: to_name||to_email, email: to_email }],
+        subject: email_subject||"ECWA Lafia DCC Portal",
+        textContent: email_body,
+      }),
     });
-    if (!res.ok) console.error("EmailJS error:", await res.text());
-    else console.log("✅ Email sent to", params.to_email);
-  } catch(e) { console.error("EmailJS fetch error:", e); }
+    if(!res.ok){ const err=await res.text(); console.error("Brevo error:", err); }
+    else console.log("✅ Email sent to", to_email);
+  } catch(e){ console.error("Brevo fetch error:", e); }
 }
 
 async function sendApprovalEmail({ to_name, to_email, user_email, user_password }) {
-  await ejsSend(EJS_TPL_APPROVAL, { to_name, to_email, user_email, user_password });
+  await brevoSend({
+    to_name, to_email,
+    email_subject: "Your ECWA Lafia DCC Staff Portal Account Has Been Approved",
+    email_body:
+`Dear ${to_name},
+
+Your ECWA Lafia DCC Staff Portal account has been approved.
+
+Your login details:
+Email: ${user_email}
+Password: ${user_password}
+
+Sign in at: https://ecwa-portal.onrender.com
+
+Please change your password after first login.
+
+God bless you.
+ECWA Lafia DCC Admin`,
+  });
 }
 
 async function sendGenericEmail({ to_name, to_email, email_subject, email_body }) {
-  await ejsSend(EJS_TPL_GENERIC, { to_name, to_email, email_subject, email_body });
+  await brevoSend({
+    to_name, to_email,
+    email_subject,
+    email_body:
+`Dear ${to_name},
+
+${email_body}
+
+ECWA Lafia DCC
+https://ecwa-portal.onrender.com`,
+  });
 }
 
 // ── Offline ECWA Logo (inline SVG as data URI) ─────────────────────────────────
@@ -562,7 +597,11 @@ function NotifPanel({ notifs, onRead, onClose, onNavigate }) {
       <div style={{maxHeight:380,overflowY:"auto"}}>
         {notifs.length===0&&<div style={{padding:32,textAlign:"center",color:"#bbb",fontSize:13}}>No notifications yet</div>}
         {notifs.map(n=>(
-          <div key={n.id} onClick={()=>{onRead(n.id);if(n.id.startsWith("sra_")&&onNavigate){onNavigate("sunday");onClose();}}} style={{padding:"12px 18px",borderBottom:"1px solid #f5f3ef",cursor:"pointer",background:n.read?"#fff":"#fef9ee",transition:"background 0.2s"}}
+          <div key={n.id} onClick={()=>{onRead(n.id);if(onNavigate){
+            if(n.id.startsWith("sra_")){onNavigate("sunday",null);onClose();}
+            else if(n.id.startsWith("fin_")){onNavigate("finance",n.id.replace("fin_",""));onClose();}
+            else if(n.id.startsWith("lv_")){onNavigate("leave",n.id.replace("lv_",""));onClose();}
+          }}} style={{padding:"12px 18px",borderBottom:"1px solid #f5f3ef",cursor:"pointer",background:n.read?"#fff":"#fef9ee",transition:"background 0.2s"}}
             onMouseEnter={e=>e.currentTarget.style.background="#f8f6f0"} onMouseLeave={e=>e.currentTarget.style.background=n.read?"#fff":"#fef9ee"}>
             <div style={{display:"flex",gap:10,alignItems:"flex-start"}}>
               <span style={{fontSize:18,flexShrink:0}}>{n.icon||"🔔"}</span>
@@ -662,7 +701,30 @@ function ReqDetail({ req, user, users, onClose, onAction }) {
             </div>
             <div style={{background:"#f8f6f0",borderLeft:"4px solid #c9a84c",borderRadius:8,padding:14,marginBottom:18}}>
               <div style={{fontSize:11,color:"#aaa",textTransform:"uppercase",letterSpacing:0.5,marginBottom:5}}>Purpose</div>
-              <p style={{fontSize:13,lineHeight:1.7}}>{req.purpose}</p>
+              <p style={{fontSize:13,lineHeight:1.7,marginBottom:req.items?.length>0?10:0}}>{req.purpose}</p>
+              {req.items?.length>0&&(
+                <div>
+                  <div style={{fontSize:11,color:"#aaa",textTransform:"uppercase",letterSpacing:0.5,marginBottom:6,marginTop:4}}>Items Breakdown</div>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 90px 50px 90px",gap:4,marginBottom:4}}>
+                    {["Description","Unit Cost","Qty","Total"].map(h=><div key={h} style={{fontSize:10,fontWeight:700,color:"#aaa"}}>{h}</div>)}
+                  </div>
+                  {req.items.map((item,i)=>{
+                    const t=(parseFloat(item.unitCost)||0)*(parseFloat(item.qty)||0);
+                    return(
+                      <div key={i} style={{display:"grid",gridTemplateColumns:"1fr 90px 50px 90px",gap:4,padding:"5px 0",borderTop:"1px solid #e8e4dc"}}>
+                        <div style={{fontSize:12,color:"#0b1f3a"}}>{item.desc}</div>
+                        <div style={{fontSize:12,color:"#555"}}>{money(parseFloat(item.unitCost)||0)}</div>
+                        <div style={{fontSize:12,color:"#555",textAlign:"center"}}>×{item.qty}</div>
+                        <div style={{fontSize:12,fontWeight:700,color:"#0b1f3a",textAlign:"right"}}>{money(t)}</div>
+                      </div>
+                    );
+                  })}
+                  <div style={{display:"flex",justifyContent:"space-between",padding:"8px 0 0",borderTop:"2px solid #c9a84c",marginTop:4}}>
+                    <div style={{fontSize:12,fontWeight:700,color:"#0b1f3a"}}>TOTAL</div>
+                    <div style={{fontSize:14,fontWeight:700,color:"#0b1f3a"}}>{money(req.amount)}</div>
+                  </div>
+                </div>
+              )}
             </div>
             {req.attachment&&(
               <div style={{display:"flex",alignItems:"center",gap:10,background:"#f0f9ff",border:"1px solid #aed6f1",borderRadius:8,padding:"10px 14px",marginBottom:18,flexWrap:"wrap"}}>
@@ -789,6 +851,37 @@ function FinancePrintForm({ req, onClose }) {
               </tr>
             ))}
           </table>
+          {/* Items breakdown in print */}
+          {req.items?.length>0&&(
+            <div style={{marginBottom:20}}>
+              <div style={{fontSize:12,fontWeight:700,color:"#5a5a7a",textTransform:"uppercase",letterSpacing:0.5,marginBottom:8,borderTop:"1px solid #e8e4dc",paddingTop:12}}>Items Breakdown</div>
+              <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                <thead>
+                  <tr style={{background:"#f8f6f0"}}>
+                    {["#","Description","Unit Cost","Qty","Total"].map(h=><th key={h} style={{padding:"6px 8px",textAlign:"left",fontWeight:700,color:"#555",borderBottom:"2px solid #e8e4dc"}}>{h}</th>)}
+                  </tr>
+                </thead>
+                <tbody>
+                  {req.items.map((item,i)=>{
+                    const t=(parseFloat(item.unitCost)||0)*(parseFloat(item.qty)||0);
+                    return(
+                      <tr key={i} style={{borderBottom:"1px solid #f0ede8"}}>
+                        <td style={{padding:"6px 8px",color:"#888"}}>{i+1}</td>
+                        <td style={{padding:"6px 8px",fontWeight:500}}>{item.desc}</td>
+                        <td style={{padding:"6px 8px"}}>{money(parseFloat(item.unitCost)||0)}</td>
+                        <td style={{padding:"6px 8px",textAlign:"center"}}>{item.qty}</td>
+                        <td style={{padding:"6px 8px",fontWeight:700}}>{money(t)}</td>
+                      </tr>
+                    );
+                  })}
+                  <tr style={{background:"#f8f6f0",fontWeight:700}}>
+                    <td colSpan={4} style={{padding:"8px",textAlign:"right",fontWeight:700}}>TOTAL</td>
+                    <td style={{padding:"8px",fontWeight:700,color:"#0b1f3a"}}>{money(req.amount)}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          )}
           {/* Approval signatures */}
           {Object.keys(req.signatures).length>0&&(
             <div style={{marginBottom:24}}>
@@ -817,11 +910,27 @@ function FinancePrintForm({ req, onClose }) {
 }
 
 // ── Finance Module ─────────────────────────────────────────────────────────────
-function FinanceMod({ user, users, requests, setRequests, toast }) {
+function FinanceMod({ user, users, requests, setRequests, toast, openRecordId, onRecordOpened }) {
   const [sel,setSel]=useState(null); const [form,setForm]=useState(false);
-  const [tab,setTab]=useState("all"); const [purp,setPurp]=useState(""); const [amt,setAmt]=useState("");
+  const [tab,setTab]=useState("all");
   const [reqDate,setReqDate]=useState(today()); const [reqAttach,setReqAttach]=useState(null);
+  const [reqNote,setReqNote]=useState("");
+  const [items,setItems]=useState([{id:1,desc:"",unitCost:"",qty:"1"}]);
   const attachRef=useRef(null);
+
+  const addItem=()=>setItems(it=>[...it,{id:Date.now(),desc:"",unitCost:"",qty:"1"}]);
+  const removeItem=(id)=>setItems(it=>it.filter(i=>i.id!==id));
+  const updateItem=(id,field,val)=>setItems(it=>it.map(i=>i.id===id?{...i,[field]:val}:i));
+  const itemTotal=(i)=>{const u=parseFloat(i.unitCost)||0;const q=parseFloat(i.qty)||0;return u*q;};
+  const grandTotal=items.reduce((s,i)=>s+itemTotal(i),0);
+  const resetForm=()=>{setItems([{id:1,desc:"",unitCost:"",qty:"1"}]);setReqDate(today());setReqAttach(null);setReqNote("");};
+
+  useEffect(()=>{
+    if(openRecordId){
+      const r=requests.find(x=>x.id===openRecordId);
+      if(r){setSel(r);setTab("pending");if(onRecordOpened)onRecordOpened();}
+    }
+  },[openRecordId]);
 
   const isApprover = ["secretary","ads","conf_secretary","accountant","auditor","chairman","vice_chairman"].includes(user.role);
 
@@ -849,20 +958,26 @@ function FinanceMod({ user, users, requests, setRequests, toast }) {
   const sum={}; Object.keys(FIN_STATUS).forEach(k=>sum[k]=requests.filter(r=>r.status===k).length);
 
   const add=()=>{
-    if(!purp||!amt||!reqDate)return;
+    const validItems=items.filter(i=>i.desc.trim()&&parseFloat(i.unitCost)>0);
+    if(validItems.length===0||!reqDate){toast("Please add at least one item with description and cost.","danger");return;}
     const id="REQ-"+String(requests.length+1).padStart(3,"0");
-    let attachData=null;
+    const purposeText=validItems.map((i,n)=>`${n+1}. ${i.desc} (x${i.qty}) = ${money(itemTotal(i))}`).join("\n");
+    const buildRecord=(attachment)=>{
+      setRequests(r=>[...r,{
+        id, requester:user.name, requesterRole:roleDisplay(user.role), requesterEmail:user.email,
+        date:reqDate, purpose:reqNote.trim()||"See items below",
+        items:validItems, amount:grandTotal,
+        amountWords:nairaToWords(grandTotal),
+        status:"pending_secretary", signatures:{}, comments:{},
+        attachment,
+      }]);
+      toast("✅ Request submitted!");setForm(false);resetForm();
+    };
     if(reqAttach){
       const rd=new FileReader();
-      rd.onload=ev=>{
-        setRequests(r=>[...r,{id,requester:user.name,requesterRole:roleDisplay(user.role),requesterEmail:user.email,date:reqDate,purpose:purp,amount:parseFloat(amt),amountWords:nairaToWords(parseFloat(amt)),status:"pending_secretary",signatures:{},comments:{},attachment:{name:reqAttach.name,data:ev.target.result,size:(reqAttach.size/1024).toFixed(1)+" KB"}}]);
-        toast("✅ Request submitted!");setForm(false);setPurp("");setAmt("");setReqDate(today());setReqAttach(null);
-      };
+      rd.onload=ev=>buildRecord({name:reqAttach.name,data:ev.target.result,size:(reqAttach.size/1024).toFixed(1)+" KB"});
       rd.readAsDataURL(reqAttach);
-      return;
-    }
-    setRequests(r=>[...r,{id,requester:user.name,requesterRole:roleDisplay(user.role),requesterEmail:user.email,date:reqDate,purpose:purp,amount:parseFloat(amt),amountWords:nairaToWords(parseFloat(amt)),status:"pending_secretary",signatures:{},comments:{},attachment:null}]);
-    toast("✅ Request submitted!");setForm(false);setPurp("");setAmt("");setReqDate(today());setReqAttach(null);
+    } else { buildRecord(null); }
   };
 
   const act=(id,action,sig,note)=>{
@@ -938,30 +1053,56 @@ function FinanceMod({ user, users, requests, setRequests, toast }) {
       </div>
       {form&&(
         <div className="overlay">
-          <div className="modal" style={{maxWidth:560}}>
-            <MH title="New Financial Request" sub="Finance Module" onClose={()=>setForm(false)}/>
-            <div style={{padding:"22px 24px 24px",display:"flex",flexDirection:"column",gap:14}}>
-              {/* Requester info auto-populated */}
+          <div className="modal" style={{maxWidth:620}}>
+            <MH title="New Financial Request" sub="Finance Module" onClose={()=>{setForm(false);resetForm();}}/>
+            <div style={{padding:"22px 24px 24px",display:"flex",flexDirection:"column",gap:14,maxHeight:"80vh",overflowY:"auto"}}>
+              {/* Requester info */}
               <div style={{background:"linear-gradient(135deg,#0b1f3a,#1a3a5c)",borderRadius:10,padding:"12px 16px",display:"flex",gap:12,alignItems:"center"}}>
                 <div style={{width:38,height:38,background:"#c9a84c",borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontWeight:700,fontSize:14,flexShrink:0}}>{user.name.split(" ").map(n=>n[0]).join("").slice(0,2).toUpperCase()}</div>
-                <div>
-                  <div style={{fontSize:13,fontWeight:700,color:"#fff"}}>{user.name}</div>
-                  <div style={{fontSize:11,color:"#c9a84c"}}>{roleDisplay(user.role)} · {user.email}</div>
-                </div>
+                <div><div style={{fontSize:13,fontWeight:700,color:"#fff"}}>{user.name}</div><div style={{fontSize:11,color:"#c9a84c"}}>{roleDisplay(user.role)} · {user.email}</div></div>
               </div>
               <div><label>Date of Request *</label><input type="date" value={reqDate} onChange={e=>setReqDate(e.target.value)}/></div>
-              <div><label>Purpose / Description *</label><textarea rows={3} placeholder="Describe what the funds will be used for..." value={purp} onChange={e=>setPurp(e.target.value)} style={{resize:"vertical"}}/></div>
+              <div><label>General Note / Purpose (optional)</label><input placeholder="e.g. Office supplies for Q1 2026" value={reqNote} onChange={e=>setReqNote(e.target.value)}/></div>
+
+              {/* Items table */}
               <div>
-                <label>Amount Requested (₦) *</label>
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  placeholder="e.g. 75,000"
-                  value={amt ? Number(amt.replace(/,/g,'')||0).toLocaleString('en-NG') : ""}
-                  onChange={e=>{const raw=e.target.value.replace(/[^0-9]/g,''); setAmt(raw);}}
-                />
-                {amt&&parseFloat(amt)>0&&<div style={{marginTop:6,background:"#f8f6f0",borderRadius:6,padding:"6px 12px",fontSize:12,color:"#555",fontStyle:"italic"}}>In words: <strong>{nairaToWords(parseFloat(amt))}</strong></div>}
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+                  <label style={{margin:0}}>Request Items *</label>
+                  <button className="btn btn-outline btn-sm" onClick={addItem}>+ Add Item</button>
+                </div>
+                {/* Header */}
+                <div style={{display:"grid",gridTemplateColumns:"1fr 110px 70px 90px 28px",gap:6,marginBottom:4}}>
+                  {["Description","Unit Cost (₦)","Qty","Total",""].map(h=>(
+                    <div key={h} style={{fontSize:10,fontWeight:700,color:"#aaa",textTransform:"uppercase",letterSpacing:0.5,padding:"0 2px"}}>{h}</div>
+                  ))}
+                </div>
+                {items.map((item,idx)=>(
+                  <div key={item.id} style={{display:"grid",gridTemplateColumns:"1fr 110px 70px 90px 28px",gap:6,marginBottom:6,alignItems:"center"}}>
+                    <input placeholder={`Item ${idx+1} description`} value={item.desc} onChange={e=>updateItem(item.id,"desc",e.target.value)} style={{fontSize:12,padding:"6px 8px"}}/>
+                    <div style={{position:"relative"}}>
+                      <span style={{position:"absolute",left:6,top:"50%",transform:"translateY(-50%)",fontSize:11,color:"#aaa",pointerEvents:"none"}}>₦</span>
+                      <input type="text" inputMode="decimal" placeholder="0.00" style={{paddingLeft:18,fontSize:12,padding:"6px 6px 6px 18px"}}
+                        value={item.unitCost}
+                        onChange={e=>updateItem(item.id,"unitCost",e.target.value.replace(/[^0-9.]/g,""))}
+                        onBlur={e=>{const v=parseFloat(e.target.value);if(!isNaN(v))updateItem(item.id,"unitCost",v.toFixed(2));}}/>
+                    </div>
+                    <input type="number" min="1" placeholder="1" value={item.qty} onChange={e=>updateItem(item.id,"qty",e.target.value)} style={{fontSize:12,padding:"6px 8px",textAlign:"center"}}/>
+                    <div style={{fontSize:12,fontWeight:700,color:"#0b1f3a",padding:"6px 4px",background:"#f8f6f0",borderRadius:6,textAlign:"right"}}>{itemTotal(item)>0?money(itemTotal(item)):"—"}</div>
+                    {items.length>1
+                      ?<button onClick={()=>removeItem(item.id)} style={{background:"none",border:"none",color:"#e74c3c",fontSize:16,cursor:"pointer",padding:0,lineHeight:1}}>×</button>
+                      :<div/>}
+                  </div>
+                ))}
+                {/* Grand total */}
+                {grandTotal>0&&(
+                  <div style={{background:"linear-gradient(135deg,#0b1f3a,#1a3a5c)",borderRadius:8,padding:"10px 14px",display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:6}}>
+                    <div style={{color:"rgba(255,255,255,0.6)",fontSize:12,fontWeight:600}}>TOTAL AMOUNT</div>
+                    <div style={{fontFamily:"Georgia,serif",fontSize:18,fontWeight:700,color:"#c9a84c"}}>{money(grandTotal)}</div>
+                  </div>
+                )}
+                {grandTotal>0&&<div style={{marginTop:6,fontSize:11,color:"#888",fontStyle:"italic"}}>In words: {nairaToWords(grandTotal)}</div>}
               </div>
+
               {/* Attachment */}
               <div>
                 <label>Supporting Document (optional)</label>
@@ -977,7 +1118,10 @@ function FinanceMod({ user, users, requests, setRequests, toast }) {
                 }
                 <input ref={attachRef} type="file" style={{display:"none"}} accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" onChange={e=>{const f=e.target.files[0];if(f)setReqAttach(f);e.target.value="";}}/>
               </div>
-              <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}><button className="btn btn-outline" onClick={()=>{setForm(false);setPurp("");setAmt("");setReqDate(today());setReqAttach(null);}}>Cancel</button><button className="btn btn-gold" disabled={!purp||!amt||!reqDate} onClick={add}>Submit Request →</button></div>
+              <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
+                <button className="btn btn-outline" onClick={()=>{setForm(false);resetForm();}}>Cancel</button>
+                <button className="btn btn-gold" disabled={items.filter(i=>i.desc.trim()&&parseFloat(i.unitCost)>0).length===0||!reqDate} onClick={add}>Submit Request →</button>
+              </div>
             </div>
           </div>
         </div>
@@ -1222,8 +1366,15 @@ function LeaveLetter({ leave, users, onClose }) {
 }
 
 // ── Leave Module ──────────────────────────────────────────────────────────────
-function LeaveMod({ user, users, leaves, setLeaves, toast }) {
+function LeaveMod({ user, users, leaves, setLeaves, toast, openRecordId, onRecordOpened }) {
   const [form,setForm]=useState(false); const [sel,setSel]=useState(null); const [tab,setTab]=useState("all");
+
+  useEffect(()=>{
+    if(openRecordId){
+      const l=leaves.find(x=>x.id===openRecordId);
+      if(l){setSel(l);setTab("pending");if(onRecordOpened)onRecordOpened();}
+    }
+  },[openRecordId]);
 
   const isApprover = ["lo","secretary","ads","conf_secretary","accountant","auditor","chairman","vice_chairman"].includes(user.role);
 
@@ -1660,8 +1811,32 @@ function SundayReportForm({ user, onSubmit, onClose }) {
 function SundayReportDetail({ report, user, users, setSundayReports, toast, onClose }) {
   const [showAppeal,setShowAppeal]=useState(false); const [appealText,setAppealText]=useState("");
   const [appealAction,setAppealAction]=useState(null); const [appealNote,setAppealNote]=useState("");
+  const [editMode,setEditMode]=useState(false);
+  const [editCols,setEditCols]=useState({...report.collections});
+  const [editAtt,setEditAtt]=useState({...report.attendance});
   const totalAtt=(report.attendance.men||0)+(report.attendance.women||0)+(report.attendance.children||0);
   const isAdmin=["secretary","ads","conf_secretary","chairman","accountant"].includes(user.role);
+  const isPastor=user.role==="pastor";
+
+  const saveEdit=()=>{
+    setSundayReports(rs=>rs.map(r=>r.id===report.id?{...r,
+      collections:editCols,
+      attendance:editAtt,
+      totalGross:Object.values(editCols).reduce((s,v)=>s+(parseFloat(v)||0),0)+(report.optionalItems||[]).reduce((s,i)=>s+(parseFloat(i.amount)||0),0),
+      submitted:true,
+      appeal:r.appeal?{...r.appeal,status:"resolved",resolvedBy:user.name,resolvedDate:new Date().toISOString().slice(0,10)}:null
+    }:r));
+    if(isPastor){
+      const admins=users.filter(u=>["secretary","ads","conf_secretary"].includes(u.role));
+      admins.forEach(a=>sendGenericEmail({to_name:a.name,to_email:a.email,
+        email_subject:`Sunday Report Resubmitted — ${report.pastorName}`,
+        email_body:`${report.pastorName} has resubmitted their Sunday report for ${fdate(report.date)} after correction.
+
+Please log in to review.
+https://ecwa-portal.onrender.com`}));
+    }
+    toast("✅ Report updated successfully.");setEditMode(false);onClose();
+  };
 
   const submitAppeal=()=>{
     setSundayReports(rs=>rs.map(r=>r.id===report.id?{...r,appeal:{text:appealText,date:today(),status:"pending",pastorEmail:report.pastorEmail||user.email,pastorName:report.pastorName}}:r));
@@ -1693,6 +1868,14 @@ function SundayReportDetail({ report, user, users, setSundayReports, toast, onCl
     <div className="overlay">
       <div className="modal" style={{maxWidth:580}}>
         <MH title={report.id} sub="Sunday Report" onClose={onClose}/>
+        {/* Edit button — pastor on returned report, admin anytime */}
+        {(isAdmin||(isPastor&&report.appeal?.status==="resubmit"))&&!editMode&&(
+          <div style={{padding:"0 24px 12px",display:"flex",gap:8}}>
+            <button className="btn btn-gold btn-sm" onClick={()=>setEditMode(true)}>
+              ✏️ {isPastor?"Edit & Resubmit":"Edit Report"}
+            </button>
+          </div>
+        )}
         <div style={{padding:"22px 24px"}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:18,flexWrap:"wrap",gap:10}}>
             <div>
@@ -1736,6 +1919,39 @@ function SundayReportDetail({ report, user, users, setSundayReports, toast, onCl
             ))}
           </div>
 
+          {/* Edit Mode */}
+          {editMode&&(
+            <div style={{background:"#fff9f0",border:"1.5px solid #c9a84c",borderRadius:10,padding:"16px 20px",marginBottom:16}}>
+              <div style={{fontWeight:700,fontSize:13,color:"#0b1f3a",marginBottom:12}}>✏️ Edit Report Data</div>
+              <div style={{marginBottom:10}}>
+                <div style={{fontSize:11,fontWeight:700,color:"#5a5a7a",marginBottom:6}}>Attendance</div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
+                  {["men","women","children"].map(k=>(
+                    <div key={k}><label style={{fontSize:11}}>{k.charAt(0).toUpperCase()+k.slice(1)}</label>
+                      <input type="number" min="0" value={editAtt[k]||""} onChange={e=>setEditAtt(p=>({...p,[k]:e.target.value}))}/>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div style={{marginBottom:12}}>
+                <div style={{fontSize:11,fontWeight:700,color:"#5a5a7a",marginBottom:6}}>Collections</div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+                  {Object.keys(editCols).map(k=>(
+                    <div key={k}><label style={{fontSize:11}}>{k.charAt(0).toUpperCase()+k.slice(1)}</label>
+                      <div style={{position:"relative"}}>
+                        <span style={{position:"absolute",left:8,top:"50%",transform:"translateY(-50%)",color:"#aaa",fontSize:12}}>₦</span>
+                        <input type="text" inputMode="decimal" style={{paddingLeft:20}} value={editCols[k]||""} onChange={e=>setEditCols(p=>({...p,[k]:e.target.value.replace(/[^0-9.]/g,"")}))}/> 
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+                <button className="btn btn-outline btn-sm" onClick={()=>setEditMode(false)}>Cancel</button>
+                <button className="btn btn-gold btn-sm" onClick={saveEdit}>💾 Save & Submit</button>
+              </div>
+            </div>
+          )}
           {/* Fix #9 — Remittance Base removed */}
           <div style={{background:"linear-gradient(135deg,#0b1f3a,#1a3a5c)",borderRadius:12,padding:18,marginBottom:16}}>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
@@ -2218,15 +2434,18 @@ function PersonnelMod({ user, users, setUsers, lccs, toast }) {
                   <span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:10,marginTop:3,display:"inline-block",background:u.category==="pastor"?"#f5eefb":"#eaf4fb",color:u.category==="pastor"?"#8e44ad":"#2980b9"}}>{u.category==="pastor"?"⛪ Pastor":"🏢 Office Staff"}</span>
                 </div>
                 <div style={{display:"flex",gap:8,flexShrink:0,flexWrap:"wrap",alignItems:"center"}}>
-                  <button className="btn btn-gold" style={{padding:"6px 16px",fontSize:12}} onClick={()=>{
-                    upd(u.id,{approved:true});
+                  <button className="btn btn-gold" style={{padding:"6px 16px",fontSize:12}} onClick={async()=>{
+                    const chars="ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
+                    const tempPw=Array.from({length:8},()=>chars[Math.floor(Math.random()*chars.length)]).join("");
+                    const hashedPw=await hashPassword(tempPw);
+                    upd(u.id,{approved:true,password:hashedPw,mustChangePassword:true});
                     sendApprovalEmail({
                       to_name: u.name,
                       to_email: u.email,
                       user_email: u.email,
-                      user_password: "(your chosen password)",
+                      user_password: tempPw,
                     });
-                    toast("✅ Account approved. Login email sent to "+u.email);
+                    toast("✅ Account approved. Temp password sent to "+u.email);
                   }}>✅ Approve</button>
                   <button className="btn btn-outline" style={{padding:"6px 12px",fontSize:12}} onClick={()=>setSel(u)}>View Profile</button>
                 </div>
@@ -2976,9 +3195,8 @@ function PwdResetManager({ pwdReqs, setPwdReqs, users, setUsers, toast }) {
 }
 function SignUp({ users, lccs, setLccs, onSignUp, onGo }) {
   const [step,setStep]=useState(1); const [cat,setCat]=useState("");
-  const [f,setF]=useState({name:"",email:"",pw:"",pw2:"",phone:"",dob:"",doj:"",dept:"",jobTitle:"",role:"",rank:"",lc_ph:"",lcc:"",newLcc:"",lcc_overseen:"",gradeLevel:""});
+  const [f,setF]=useState({name:"",email:"",phone:"",dob:"",doj:"",dept:"",jobTitle:"",role:"",rank:"",lc_ph:"",lcc:"",newLcc:"",lcc_overseen:"",gradeLevel:""});
   const [er,setEr]=useState(""); const [ok,setOk]=useState(false); const [submitting,setSubmitting]=useState(false);
-  const [showPw,setShowPw]=useState(false); const [showPw2,setShowPw2]=useState(false);
   const [signatureImage,setSignatureImage]=useState(null); const [showSigPad,setShowSigPad]=useState(false);
   const sigUploadRef=useRef(null); const errRef=useRef(null);
   const s=k=>e=>setF(p=>({...p,[k]:e.target.value}));
@@ -2987,10 +3205,8 @@ function SignUp({ users, lccs, setLccs, onSignUp, onGo }) {
 
   const go=async ()=>{
     showErr("");
-    if(!f.name||!f.email||!f.pw||!f.pw2){showErr("Please fill in all required fields.");return;}
+    if(!f.name||!f.email){showErr("Please fill in all required fields.");return;}
     if(!f.email.includes("@")){showErr("Please enter a valid email.");return;}
-    if(f.pw.length<6){showErr("Password must be at least 6 characters.");return;}
-    if(f.pw!==f.pw2){showErr("Passwords do not match.");return;}
     if(users.find(u=>u.email.toLowerCase()===f.email.toLowerCase())){showErr("This email is already registered.");return;}
     if(cat==="office"&&!f.dept){showErr("Please select your department.");return;}
     if(cat==="office"&&!f.jobTitle){showErr("Please select a job title.");return;}
@@ -3006,9 +3222,8 @@ function SignUp({ users, lccs, setLccs, onSignUp, onGo }) {
       const finalLcPh=cat==="pastor"?(f.lc_ph==="__other__"?f.newLcPh:f.lc_ph):undefined;
       const roleObj = OFFICE_ROLES.find(r=>r.title===f.jobTitle);
       const role = cat==="pastor"?"pastor":(roleObj?.role||"staff");
-      const hashedPw = await hashPassword(f.pw);
       onSignUp({
-        name:f.name,email:f.email,password:hashedPw,role,category:cat,
+        name:f.name,email:f.email,password:null,role,category:cat,
         phone:f.phone,dob:f.dob||undefined,doj:f.doj||undefined,
         dept:cat==="office"?f.dept:undefined,
         jobTitle:cat==="office"?f.jobTitle:undefined,
@@ -3035,7 +3250,7 @@ function SignUp({ users, lccs, setLccs, onSignUp, onGo }) {
     <div style={{maxWidth:420,width:"100%",margin:"0 auto",textAlign:"center"}} className="fade-in">
       <div style={{fontSize:52,marginBottom:16}}>🎉</div>
       <h2 style={{fontFamily:"Georgia,serif",color:"#fff",fontSize:24,marginBottom:10}}>Account Created!</h2>
-      <p style={{color:"rgba(255,255,255,0.55)",fontSize:14,marginBottom:24}}>Your account is pending admin approval. You'll be able to sign in once approved.</p>
+      <p style={{color:"rgba(255,255,255,0.55)",fontSize:14,marginBottom:24,lineHeight:1.7}}>Your account is pending admin approval. Once approved, your temporary password will be sent to <strong style={{color:"#c9a84c"}}>{f.email}</strong>. Use it to sign in and then change your password.</p>
       <button className="btn btn-gold" style={{padding:"12px 32px"}} onClick={()=>onGo("login")}>Go to Sign In →</button>
     </div>
   );
@@ -3110,21 +3325,7 @@ function SignUp({ users, lccs, setLccs, onSignUp, onGo }) {
               <select value={f.gradeLevel} onChange={s("gradeLevel")}><option value="">— Select grade level —</option>{GRADE_LEVELS.flatMap(g=>Array.from({length:15},(_,i)=>`${g}/${i+1}`)).map(g=><option key={g} value={g}>{g}</option>)}</select>
             </div>
           </>)}
-          {/* Password with show/hide */}
-          <div>
-            <label style={{color:"rgba(255,255,255,0.5)"}}>Password *</label>
-            <div style={{position:"relative"}}>
-              <input type={showPw?"text":"password"} placeholder="Minimum 6 characters" value={f.pw} onChange={s("pw")} style={{paddingRight:44}}/>
-              <button type="button" onClick={()=>setShowPw(v=>!v)} style={{position:"absolute",right:12,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",cursor:"pointer",fontSize:16,color:"#aaa",padding:0}}>{showPw?"🙈":"👁"}</button>
-            </div>
-          </div>
-          <div>
-            <label style={{color:"rgba(255,255,255,0.5)"}}>Confirm Password *</label>
-            <div style={{position:"relative"}}>
-              <input type={showPw2?"text":"password"} placeholder="Repeat password" value={f.pw2} onChange={s("pw2")} style={{paddingRight:44}}/>
-              <button type="button" onClick={()=>setShowPw2(v=>!v)} style={{position:"absolute",right:12,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",cursor:"pointer",fontSize:16,color:"#aaa",padding:0}}>{showPw2?"🙈":"👁"}</button>
-            </div>
-          </div>
+          <div className="info-box" style={{background:"rgba(201,168,76,0.1)",border:"1px solid rgba(201,168,76,0.3)"}}>🔐 You will receive a temporary password by email once your account is approved by Admin.</div>
           {/* Signature — required: draw OR upload */}
           <div>
             <label style={{color:"rgba(255,255,255,0.5)"}}>Your Signature * <span style={{fontSize:10,color:"#c9a84c",fontStyle:"italic"}}>(used on official documents)</span></label>
@@ -3220,7 +3421,7 @@ function SignIn({ users, setUsers, onLogin, onGo, pwdReqs, setPwdReqs }) {
 
 // ── Dashboard ──────────────────────────────────────────────────────────────────
 function Dashboard({ user, users, setUsers, requests, setRequests, leaves, setLeaves, sundayReports, setSundayReports, attendance, setAttendance, announcements, setAnnouncements, pwdReqs, setPwdReqs, lccs, setLccs, onLogout }) {
-  const [mod,setMod]=useState(null); const [tk,setTk]=useState(null);
+  const [mod,setMod]=useState(null); const [tk,setTk]=useState(null); const [notifOpenRecord,setNotifOpenRecord]=useState(null);
   const [notifOpen,setNotifOpen]=useState(false);
   const [idCard,setIdCard]=useState(false);
   const toast=(m,t="success")=>{setTk({m,t});setTimeout(()=>setTk(null),4000);};
@@ -3311,7 +3512,7 @@ function Dashboard({ user, users, setUsers, requests, setRequests, leaves, setLe
               <button className="btn-ghost" style={{fontSize:16,padding:"5px 8px"}} onClick={()=>setNotifOpen(o=>!o)}>
                 🔔{unreadCount>0&&<span style={{background:"#c0392b",color:"#fff",borderRadius:10,padding:"1px 5px",fontSize:10,marginLeft:2}}>{unreadCount}</span>}
               </button>
-              {notifOpen&&<NotifPanel notifs={notifs} onRead={markRead} onClose={()=>setNotifOpen(false)} onNavigate={m=>{setMod(m);setNotifOpen(false);}}/>}
+              {notifOpen&&<NotifPanel notifs={notifs} onRead={markRead} onClose={()=>setNotifOpen(false)} onNavigate={(m,rid)=>{setMod(m);if(rid)setNotifOpenRecord(rid);setNotifOpen(false);}}/>}
             </div>
             <button className="btn-ghost" style={{fontSize:11,padding:"5px 8px"}} onClick={()=>setIdCard(true)}>📋 Biodata</button>
             <div style={{textAlign:"right",maxWidth:110}}>
@@ -3340,7 +3541,7 @@ function Dashboard({ user, users, setUsers, requests, setRequests, leaves, setLe
               <button style={{background:"rgba(255,255,255,0.12)",border:"none",borderRadius:8,color:"#fff",padding:"7px 10px",cursor:"pointer",fontSize:16,display:"flex",alignItems:"center",gap:3,minWidth:38,justifyContent:"center"}} onClick={()=>setNotifOpen(o=>!o)}>
                 🔔{unreadCount>0&&<span style={{background:"#c0392b",color:"#fff",borderRadius:8,padding:"1px 5px",fontSize:9,fontWeight:700,marginLeft:1}}>{unreadCount}</span>}
               </button>
-              {notifOpen&&<NotifPanel notifs={notifs} onRead={markRead} onClose={()=>setNotifOpen(false)} onNavigate={m=>{setMod(m);setNotifOpen(false);}}/>}
+              {notifOpen&&<NotifPanel notifs={notifs} onRead={markRead} onClose={()=>setNotifOpen(false)} onNavigate={(m,rid)=>{setMod(m);if(rid)setNotifOpenRecord(rid);setNotifOpen(false);}}/>}
             </div>
             <button style={{background:"rgba(255,255,255,0.12)",border:"none",borderRadius:8,color:"#fff",padding:"7px 10px",cursor:"pointer",fontSize:16,minWidth:38,textAlign:"center"}} onClick={()=>setIdCard(true)}>📋</button>
             <button style={{background:"rgba(192,57,43,0.9)",border:"none",borderRadius:8,color:"#fff",padding:"7px 14px",cursor:"pointer",fontSize:12,fontWeight:700,letterSpacing:0.3}} onClick={onLogout}>Exit</button>
@@ -3394,8 +3595,8 @@ function Dashboard({ user, users, setUsers, requests, setRequests, leaves, setLe
       {mod&&(
         <div style={{padding:"16px 12px",maxWidth:1060,margin:"0 auto"}}>
           {tabs.length>1&&<div style={{marginBottom:14,display:"flex",alignItems:"center",gap:8}}><button onClick={()=>setMod(null)} style={{background:"none",border:"none",color:"#c9a84c",cursor:"pointer",fontSize:13,fontWeight:600,padding:0}}>← Modules</button><span style={{color:"#bbb",fontSize:13}}>/</span><span style={{fontSize:13,color:"#0b1f3a",fontWeight:600}}>{tabs.find(t=>t.id===mod)?.label}</span></div>}
-          {mod==="finance"&&<FinanceMod user={user} users={users} requests={requests} setRequests={setRequests} toast={toast}/>}
-          {mod==="leave"&&<LeaveMod user={user} users={users} leaves={leaves} setLeaves={setLeaves} toast={toast}/>}
+          {mod==="finance"&&<FinanceMod user={user} users={users} requests={requests} setRequests={setRequests} toast={toast} openRecordId={notifOpenRecord} onRecordOpened={()=>setNotifOpenRecord(null)}/>}
+          {mod==="leave"&&<LeaveMod user={user} users={users} leaves={leaves} setLeaves={setLeaves} toast={toast} openRecordId={notifOpenRecord} onRecordOpened={()=>setNotifOpenRecord(null)}/>}
           {mod==="sunday"&&<SundayMod user={user} users={users} sundayReports={sundayReports} setSundayReports={setSundayReports} toast={toast}/>}
           {mod==="attendance"&&<AttendanceMod user={user} users={users} attendance={attendance} setAttendance={setAttendance} leaves={leaves} toast={toast}/>}
           {mod==="announcements"&&<AnnouncementsMod user={user} announcements={announcements} setAnnouncements={setAnnouncements} toast={toast}/>}
