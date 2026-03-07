@@ -1225,14 +1225,15 @@ function LeaveLetter({ leave, users, onClose }) {
 function LeaveMod({ user, users, leaves, setLeaves, toast }) {
   const [form,setForm]=useState(false); const [sel,setSel]=useState(null); const [tab,setTab]=useState("all");
 
-  const isApprover = ["lo","secretary","ads","conf_secretary","accountant","chairman","vice_chairman"].includes(user.role);
+  const isApprover = ["lo","secretary","ads","conf_secretary","accountant","auditor","chairman","vice_chairman"].includes(user.role);
 
   const pendingCount = leaves.filter(l=>{
     if(user.role==="lo") return l.lcc===user.lcc_overseen&&l.status==="pending_dept";
     const dh = l.dept?deptHeadRole(l.dept):null;
-    if(user.role===dh||
+    if((user.role===dh&&l.status==="pending_dept")||
        (["secretary","ads","conf_secretary"].includes(user.role)&&l.status==="pending_admin")||
        (user.role==="accountant"&&l.status==="pending_finance")||
+       (user.role==="auditor"&&l.status==="pending_auditor")||
        (["chairman","vice_chairman"].includes(user.role)&&l.status==="pending_chairman")) return true;
     return false;
   }).length;
@@ -1740,7 +1741,7 @@ function SundayReportDetail({ report, user, users, setSundayReports, toast, onCl
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
               <div><div style={{fontSize:10,color:"rgba(255,255,255,0.5)"}}>Total Gross</div><div style={{fontFamily:"Georgia,serif",fontSize:16,fontWeight:700,color:"#fff"}}>{money(report.totalGross)}</div></div>
               <div><div style={{fontSize:10,color:"rgba(255,255,255,0.5)"}}>{report.fullRemittance?"100% DCC Remittance":"25% DCC Remittance"}</div><div style={{fontFamily:"Georgia,serif",fontSize:16,fontWeight:700,color:"#c9a84c"}}>{money(report.remittanceDue)}</div></div>
-              {!report.fullRemittance&&<div><div style={{fontSize:10,color:"rgba(255,255,255,0.5)"}}>75% Retained by LC</div><div style={{fontFamily:"Georgia,serif",fontSize:16,fontWeight:700,color:"#27ae60"}}>{money(report.remittanceBase-report.remittanceDue)}</div></div>}
+              {!report.fullRemittance&&<div><div style={{fontSize:10,color:"rgba(255,255,255,0.5)"}}>75% Retained by LC</div><div style={{fontFamily:"Georgia,serif",fontSize:16,fontWeight:700,color:"#27ae60"}}>{money((report.totalGross||0)-(report.remittanceDue||0))}</div></div>}
             </div>
           </div>
 
@@ -2992,12 +2993,15 @@ function SignUp({ users, lccs, setLccs, onSignUp, onGo }) {
     if(users.find(u=>u.email.toLowerCase()===f.email.toLowerCase())){setEr("This email is already registered.");return;}
     if(cat==="office"&&!f.jobTitle){setEr("Please select a job title.");return;}
     if(cat==="office"&&!f.dept){setEr("Please select your department.");return;}
-    if(cat==="pastor"&&(!f.rank||!f.lc_ph||!f.lcc)){setEr("Please fill in your rank, LC/PH and LCC.");return;}
+    if(cat==="pastor"&&(!f.rank||!f.lcc)){setEr("Please fill in your rank and LCC.");return;}
+    if(cat==="pastor"&&!f.lc_ph){setEr("Please select your LC / Prayer House.");return;}
+    if(cat==="pastor"&&f.lc_ph==="__other__"&&!f.newLcPh){setEr("Please type your church / prayer house name.");return;}
     if(cat==="pastor"&&f.lcc==="__new__"&&!f.newLcc){setEr("Please type the new LCC name.");return;}
     if(!signatureImage){setEr("Please draw your signature before submitting.");return;}
 
     if(cat==="pastor"&&f.newLcc&&!lccs.includes(f.newLcc)){setLccs(l=>[...l,f.newLcc]);}
     const finalLcc=cat==="pastor"?(f.lcc==="__new__"?f.newLcc:f.lcc):undefined;
+    const finalLcPh=cat==="pastor"?(f.lc_ph==="__other__"?f.newLcPh:f.lc_ph):undefined;
     const roleObj = OFFICE_ROLES.find(r=>r.title===f.jobTitle);
     const role = cat==="pastor"?"pastor":(roleObj?.role||"staff");
     const hashedPw = await hashPassword(f.pw);
@@ -3007,7 +3011,7 @@ function SignUp({ users, lccs, setLccs, onSignUp, onGo }) {
       dept:cat==="office"?f.dept:undefined,
       jobTitle:cat==="office"?f.jobTitle:undefined,
       rank:cat==="pastor"?f.rank:undefined,
-      lc_ph:cat==="pastor"?f.lc_ph:undefined,
+      lc_ph:cat==="pastor"?finalLcPh:undefined,
       lcc:cat==="pastor"?finalLcc:undefined,
       gradeLevel:f.gradeLevel||undefined,
       gradePending:true, approved:false,
@@ -3094,7 +3098,7 @@ function SignUp({ users, lccs, setLccs, onSignUp, onGo }) {
             <div><label style={{color:"rgba(255,255,255,0.5)"}}>LC / Prayer House *</label>
               <select value={f.lc_ph} onChange={s("lc_ph")}><option value="">— Select church —</option>{churchOptions.map(c=><option key={c} value={c}>{c}</option>)}<option value="__other__">+ Not listed</option></select>
             </div>
-            {f.lc_ph==="__other__"&&<div><label style={{color:"rgba(255,255,255,0.5)"}}>Church / PH Name *</label><input placeholder="e.g. ECWA New Harvest" value="" onChange={s("lc_ph")}/></div>}
+            {f.lc_ph==="__other__"&&<div><label style={{color:"rgba(255,255,255,0.5)"}}>Church / PH Name *</label><input placeholder="e.g. ECWA New Harvest" value={f.newLcPh||""} onChange={e=>setF(p=>({...p,newLcPh:e.target.value}))}/></div>}
             <div><label style={{color:"rgba(255,255,255,0.5)"}}>Grade Level (self-declared)</label>
               <select value={f.gradeLevel} onChange={s("gradeLevel")}><option value="">— Select grade level —</option>{GRADE_LEVELS.flatMap(g=>Array.from({length:15},(_,i)=>`${g}/${i+1}`)).map(g=><option key={g} value={g}>{g}</option>)}</select>
             </div>
