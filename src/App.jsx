@@ -69,8 +69,26 @@ const GlobalStyles = () => (
     .id-card{background:linear-gradient(135deg,#0b1f3a 0%,#1a3a5c 100%);border-radius:16px;padding:24px;color:#fff;position:relative;overflow:hidden;width:320px;min-height:200px;}
     .id-card::before{content:'';position:absolute;width:200px;height:200px;border:1px solid rgba(201,168,76,0.15);border-radius:50%;top:-60px;right:-60px;}
     .notif-panel{position:absolute;top:52px;right:16px;width:340px;background:#fff;border-radius:14px;box-shadow:0 8px 40px rgba(11,31,58,0.18);z-index:200;overflow:hidden;border:1px solid #e8e4dc;}
-    @media print{.no-print{display:none!important;}.print-only{display:block!important;}}
+    @media print{
+      .no-print{display:none!important;}
+      .print-only{display:block!important;}
+      body{margin:0;padding:0;}
+      .overlay{position:static!important;background:none!important;padding:0!important;}
+      .modal{box-shadow:none!important;border-radius:0!important;max-width:100%!important;width:100%!important;max-height:none!important;overflow:visible!important;}
+      header,.mobile-tabs{display:none!important;}
+      button{display:none!important;}
+      @page{margin:15mm;}
+    }
     .print-only{display:none;}
+    .header-mobile{display:none;}
+    @media(max-width:768px){
+      .header-desktop-row{display:none!important;}
+      .header-mobile{display:block!important;}
+    }
+    @media(min-width:769px){
+      .header-mobile{display:none!important;}
+      .header-desktop-row{display:flex!important;}
+    }
 
     /* ── MOBILE RESPONSIVE ─────────────────────────────────────────────────── */
     @media(max-width:768px){
@@ -167,23 +185,46 @@ const DEPARTMENTS = [
   { id:"finance",   label:"Finance",            head_role:"accountant" },
   { id:"missions",  label:"Missions (EMS)",     head_role:"ems_coordinator" },
   { id:"admin",     label:"Admin & Personnel",  head_role:"secretary" },
+  { id:"executive", label:"Executive",          head_role:"chairman" },
 ];
 
-// Job titles mapped to roles
+// Job titles mapped to roles AND department
 const OFFICE_ROLES = [
-  { title:"Chairman",                  role:"chairman"           },
-  { title:"Vice Chairman",             role:"vice_chairman"      },
-  { title:"Secretary",                 role:"secretary"          },
-  { title:"ADS (Asst. DCC Secretary)", role:"ads"                },
-  { title:"Accountant",                role:"accountant"         },
-  { title:"Auditor",                   role:"auditor"            },
-  { title:"Cashier",                   role:"cashier"            },
-  { title:"Confidential Secretary",    role:"conf_secretary"     },
-  { title:"Personnel Officer",         role:"personnel"          },
-  { title:"EMS Coordinator",           role:"ems_coordinator"    },
-  { title:"Lecturer",                  role:"lecturer"           },
-  { title:"Cleaner / Security",        role:"support"            },
+  { title:"Chairman",                  role:"chairman",        dept:"executive" },
+  { title:"Vice Chairman",             role:"vice_chairman",   dept:"executive" },
+  { title:"Secretary",                 role:"secretary",       dept:"admin"     },
+  { title:"ADS (Asst. DCC Secretary)", role:"ads",             dept:"admin"     },
+  { title:"Confidential Secretary",    role:"conf_secretary",  dept:"admin"     },
+  { title:"Personnel Officer",         role:"personnel",       dept:"admin"     },
+  { title:"Accountant",                role:"accountant",      dept:"finance"   },
+  { title:"Auditor",                   role:"auditor",         dept:"finance"   },
+  { title:"Cashier",                   role:"cashier",         dept:"finance"   },
+  { title:"EMS Coordinator",           role:"ems_coordinator", dept:"missions"  },
+  { title:"Lecturer",                  role:"lecturer",        dept:"missions"  },
+  { title:"Cleaner / Security",        role:"support",         dept:"admin"     },
 ];
+
+// Number to words (Naira) for finance forms
+function nairaToWords(amount) {
+  if(!amount||isNaN(amount)) return "";
+  const n = Math.floor(Math.abs(amount));
+  const kobo = Math.round((Math.abs(amount) - n) * 100);
+  const ones = ["","One","Two","Three","Four","Five","Six","Seven","Eight","Nine","Ten","Eleven","Twelve","Thirteen","Fourteen","Fifteen","Sixteen","Seventeen","Eighteen","Nineteen"];
+  const tens = ["","","Twenty","Thirty","Forty","Fifty","Sixty","Seventy","Eighty","Ninety"];
+  function say(n) {
+    if(n===0) return "";
+    if(n<20) return ones[n]+" ";
+    if(n<100) return tens[Math.floor(n/10)]+" "+(n%10?ones[n%10]+" ":"");
+    return ones[Math.floor(n/100)]+" Hundred "+(n%100?say(n%100):"");
+  }
+  function chunk(n,label) { return n>0?say(n)+label+" ":""; }
+  const billions=Math.floor(n/1e9), millions=Math.floor((n%1e9)/1e6), thousands=Math.floor((n%1e6)/1e3), remainder=n%1e3;
+  let words = (chunk(billions,"Billion")+chunk(millions,"Million")+chunk(thousands,"Thousand")+say(remainder)).trim() || "Zero";
+  words = "Naira "+words;
+  if(kobo>0) words += " and "+say(kobo).trim()+" Kobo";
+  words += " Only";
+  return words;
+}
 
 const PASTOR_RANKS = ["Church Planter","Unlicensed Pastor","Licensed Pastor","Reverend"];
 
@@ -249,12 +290,13 @@ const DOC_TYPES_FIXED = [
 const LEAVE_TYPES = ["Annual Leave","Sick Leave","Casual Leave","Compassionate Leave","Study Leave","Maternity / Paternity Leave"];
 
 const LEAVE_STATUS = {
-  pending_dept:   { label:"Awaiting Dept Head",    color:"#e67e22", bg:"#fef3e2" },
-  pending_admin:  { label:"Awaiting Admin & Personnel", color:"#8e44ad", bg:"#f5eefb" },
-  pending_finance:{ label:"Awaiting Finance",      color:"#2980b9", bg:"#eaf4fb" },
-  pending_chairman:{ label:"Awaiting Chairman",    color:"#c0392b", bg:"#fdecea" },
-  approved:       { label:"Approved ✓",            color:"#27ae60", bg:"#eafbf0" },
-  rejected:       { label:"Rejected",              color:"#7f8c8d", bg:"#f4f6f7" },
+  pending_dept:    { label:"Awaiting Dept Head",        color:"#e67e22", bg:"#fef3e2" },
+  pending_admin:   { label:"Awaiting Admin & Personnel", color:"#8e44ad", bg:"#f5eefb" },
+  pending_finance: { label:"Awaiting Finance",           color:"#2980b9", bg:"#eaf4fb" },
+  pending_auditor: { label:"Awaiting Auditor",           color:"#6c3483", bg:"#f4ecf7" },
+  pending_chairman:{ label:"Awaiting Chairman",          color:"#c0392b", bg:"#fdecea" },
+  approved:        { label:"Approved ✓",                 color:"#27ae60", bg:"#eafbf0" },
+  rejected:        { label:"Rejected",                   color:"#7f8c8d", bg:"#f4f6f7" },
 };
 
 // Finance request approval chain
@@ -332,7 +374,7 @@ const ATT_STYLE = {
 };
 
 // ── Helpers
-const money  = n => "₦"+Number(n||0).toLocaleString("en-NG");
+const money  = n => "₦"+Number(n||0).toLocaleString("en-NG",{minimumFractionDigits:2,maximumFractionDigits:2});
 const fdate  = d => d ? new Date(d).toLocaleDateString("en-GB",{day:"numeric",month:"short",year:"numeric"}) : "—";
 const today  = () => new Date().toISOString().split("T")[0];
 const getAge = dob => dob ? Math.floor((new Date()-new Date(dob))/(1000*60*60*24*365.25)) : null;
@@ -371,11 +413,9 @@ const getLOForLCC = (users, lcc) => users.find(u=>u.loAppointment?.active&&u.loA
 // Can approve leave at which stage
 const canActLeave = (user, leave, users=[]) => {
   if(leave.status==="pending_dept"){
-    // Pastor leave: LO of that LCC is dept-head equivalent
     if(leave.requester_role==="pastor"||leave.category==="pastor"){
       const lo = getLOForLCC(users, leave.lcc);
       if(lo && user.id===lo.id) return "dept";
-      // If user is logged in via LO credential
       if(user.role==="lo" && user.lcc_overseen===leave.lcc) return "dept";
       return null;
     }
@@ -391,6 +431,10 @@ const canActLeave = (user, leave, users=[]) => {
   }
   if(leave.status==="pending_finance"){
     if(user.role==="accountant") return "finance";
+    return null;
+  }
+  if(leave.status==="pending_auditor"){
+    if(user.role==="auditor") return "auditor";
     return null;
   }
   if(leave.status==="pending_chairman"){
@@ -548,14 +592,27 @@ function SigPad({ onSave, onClose }) {
   );
 }
 
-// ── Finance: Request Detail ────────────────────────────────────────────────────
+// ── Signature Updater (inline button for staff profile) ───────────────────────
+function SigUpdater({ staffId, onUpdate }) {
+  const [show,setShow]=useState(false);
+  return(
+    <>
+      <button className="btn btn-outline btn-sm" style={{marginTop:4}} onClick={()=>setShow(true)}>✏️ Update Signature</button>
+      {show&&<SigPad onSave={d=>{onUpdate(staffId,{signatureImage:d});setShow(false);}} onClose={()=>setShow(false)}/>}
+    </>
+  );
+}
+
+// ── Finance: Request Detail ───────────────────────────────────────────────────
 function ReqDetail({ req, user, onClose, onAction }) {
   const [showSig,setShowSig]=useState(false); const [sig,setSig]=useState(null); const [note,setNote]=useState("");
+  const [showPrint,setShowPrint]=useState(false);
   const isApprover = ["secretary","ads","conf_secretary"].includes(user.role) ? req.status==="pending_secretary"
     : user.role==="accountant" ? req.status==="pending_finance"
     : user.role==="auditor" ? req.status==="pending_auditor"
     : ["chairman","vice_chairman"].includes(user.role) ? req.status==="pending_chairman" : false;
   const sc=FIN_STATUS[req.status];
+  if(showPrint) return <FinancePrintForm req={req} onClose={()=>setShowPrint(false)}/>;
   return(
     <>
       <div className="overlay">
@@ -563,13 +620,24 @@ function ReqDetail({ req, user, onClose, onAction }) {
           <MH title={req.id} sub="Financial Request" onClose={onClose}/>
           <div style={{padding:"22px 24px"}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:18,flexWrap:"wrap",gap:10}}>
-              <div><div style={{fontFamily:"Georgia,serif",fontSize:26,fontWeight:700,color:"#0b1f3a"}}>{money(req.amount)}</div><div style={{fontSize:12,color:"#888",marginTop:2}}>By {req.requester} · {fdate(req.date)}</div></div>
+              <div>
+                <div style={{fontFamily:"Georgia,serif",fontSize:26,fontWeight:700,color:"#0b1f3a"}}>{money(req.amount)}</div>
+                {req.amountWords&&<div style={{fontSize:11,color:"#888",fontStyle:"italic",marginTop:2}}>{req.amountWords}</div>}
+                <div style={{fontSize:12,color:"#888",marginTop:2}}>By {req.requester}{req.requesterRole?` (${req.requesterRole})`:""} · {fdate(req.date)}</div>
+              </div>
               <span className="badge" style={{color:sc.color,background:sc.bg}}>{sc.label}</span>
             </div>
             <div style={{background:"#f8f6f0",borderLeft:"4px solid #c9a84c",borderRadius:8,padding:14,marginBottom:18}}>
               <div style={{fontSize:11,color:"#aaa",textTransform:"uppercase",letterSpacing:0.5,marginBottom:5}}>Purpose</div>
               <p style={{fontSize:13,lineHeight:1.7}}>{req.purpose}</p>
             </div>
+            {req.attachment&&(
+              <div style={{display:"flex",alignItems:"center",gap:10,background:"#f0f9ff",border:"1px solid #aed6f1",borderRadius:8,padding:"10px 14px",marginBottom:18}}>
+                <span style={{fontSize:22}}>📎</span>
+                <div style={{flex:1,minWidth:0}}><div style={{fontSize:12,fontWeight:600,color:"#0b1f3a"}}>{req.attachment.name}</div><div style={{fontSize:10,color:"#888"}}>{req.attachment.size}</div></div>
+                <a href={req.attachment.data} download={req.attachment.name} className="btn btn-outline btn-sm" style={{flexShrink:0}}>⬇ Download</a>
+              </div>
+            )}
             {/* Approval Progress */}
             <div style={{marginBottom:18}}>
               <div style={{fontSize:11,fontWeight:700,color:"#5a5a7a",textTransform:"uppercase",letterSpacing:0.5,marginBottom:12}}>Approval Progress</div>
@@ -616,7 +684,7 @@ function ReqDetail({ req, user, onClose, onAction }) {
               </div>
             ):(
               <div style={{background:"#f8f6f0",borderRadius:8,padding:"12px 14px",textAlign:"center",color:"#aaa",fontSize:13}}>
-                {req.status==="approved"?"✅ Fully approved.":req.status==="rejected"?"❌ Rejected.":"⏳ Being processed."}
+                {req.status==="approved"?<div style={{display:"flex",gap:10,justifyContent:"center",alignItems:"center",flexWrap:"wrap"}}>✅ Fully approved. <button className="btn btn-gold btn-sm" onClick={()=>setShowPrint(true)}>🖨️ Print Approved Form</button></div>:req.status==="rejected"?"❌ Rejected.":"⏳ Being processed."}
               </div>
             )}
           </div>
@@ -627,10 +695,88 @@ function ReqDetail({ req, user, onClose, onAction }) {
   );
 }
 
+// ── Finance Print Form ────────────────────────────────────────────────────────
+function FinancePrintForm({ req, onClose }) {
+  return(
+    <div className="overlay" style={{padding:0,alignItems:"flex-start",overflowY:"auto"}}>
+      <div style={{background:"#fff",width:"100%",maxWidth:720,margin:"20px auto",borderRadius:16,boxShadow:"0 24px 60px rgba(11,31,58,0.3)",overflow:"hidden"}}>
+        <div style={{background:"#0b1f3a",padding:"14px 24px",display:"flex",justifyContent:"space-between",alignItems:"center"}} className="no-print">
+          <span style={{fontFamily:"Georgia,serif",color:"#c9a84c",fontSize:16}}>Approved Finance Request</span>
+          <div style={{display:"flex",gap:10}}>
+            <button className="btn btn-gold btn-sm" onClick={()=>window.print()}>🖨️ Print / PDF</button>
+            <button onClick={onClose} style={{background:"none",border:"none",color:"#fff",fontSize:24,cursor:"pointer"}}>×</button>
+          </div>
+        </div>
+        <div style={{padding:"32px 40px",fontFamily:"'Segoe UI',sans-serif"}}>
+          {/* Letterhead */}
+          <div style={{textAlign:"center",borderBottom:"3px double #0b1f3a",paddingBottom:18,marginBottom:24}}>
+            <div style={{display:"flex",justifyContent:"center",alignItems:"center",gap:16,marginBottom:8}}>
+              <img src={LOGO_SVG} alt="ECWA" style={{width:66,height:66,borderRadius:"50%",objectFit:"cover",border:"2px solid #c9a84c"}}/>
+              <div style={{textAlign:"left"}}>
+                <div style={{fontFamily:"Georgia,serif",fontSize:9,color:"#555",letterSpacing:1}}>EVANGELICAL CHURCH WINNING ALL</div>
+                <div style={{fontFamily:"Georgia,serif",fontSize:17,fontWeight:700,color:"#0b1f3a",lineHeight:1.2}}>ECWA Lafia District Church Council (LDCC)</div>
+                <div style={{fontSize:11,color:"#666",marginTop:3}}>Beside New Tomatoes Market, P.O. Box 329, Shinge Road Lafia, Nasarawa State</div>
+                <div style={{fontSize:11,color:"#555",marginTop:2}}>E-MAIL: lafiadcc@ecwang.org &nbsp;|&nbsp; Tel: 08166646683, 09053971264</div>
+              </div>
+            </div>
+            <div style={{display:"inline-block",background:"#c9a84c",color:"#fff",padding:"3px 20px",borderRadius:20,fontSize:11,fontWeight:700,marginTop:6,letterSpacing:1}}>APPROVED FINANCIAL REQUEST FORM</div>
+          </div>
+          {/* Ref & Date */}
+          <div style={{display:"flex",justifyContent:"space-between",marginBottom:18,fontSize:13}}>
+            <div><strong>Ref:</strong> {req.id}</div>
+            <div><strong>Date:</strong> {fdate(req.date)}</div>
+          </div>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:13,marginBottom:20}}>
+            {[
+              ["Requester Name", req.requester],
+              ["Position / Role", req.requesterRole||"—"],
+              ["Email", req.requesterEmail],
+              ["Date of Request", fdate(req.date)],
+              ["Purpose", req.purpose],
+              ["Amount (Figures)", money(req.amount)],
+              ["Amount (Words)", req.amountWords||nairaToWords(req.amount)],
+              ["Request ID", req.id],
+              ["Final Status", "✅ APPROVED"],
+            ].map(([k,v],i)=>(
+              <tr key={k} style={{background:i%2===0?"#f8f6f0":"#fff"}}>
+                <td style={{padding:"8px 12px",fontWeight:600,color:"#555",width:"36%",borderBottom:"1px solid #e8e4dc"}}>{k}</td>
+                <td style={{padding:"8px 12px",color:"#0b1f3a",fontWeight:500,borderBottom:"1px solid #e8e4dc"}}>{v}</td>
+              </tr>
+            ))}
+          </table>
+          {/* Approval signatures */}
+          {Object.keys(req.signatures).length>0&&(
+            <div style={{marginBottom:24}}>
+              <div style={{fontSize:12,fontWeight:700,color:"#5a5a7a",textTransform:"uppercase",letterSpacing:0.5,marginBottom:12,borderTop:"1px solid #e8e4dc",paddingTop:12}}>Approval Signatures</div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:16}}>
+                {F_STEPS.filter(s=>req.signatures[s.role]).map(s=>(
+                  <div key={s.role} style={{textAlign:"center",border:"1px solid #e8e4dc",borderRadius:8,padding:"12px 10px"}}>
+                    {typeof req.signatures[s.role]==="string"&&req.signatures[s.role].length>20?
+                      <img src={req.signatures[s.role]} alt="" style={{height:46,marginBottom:6,maxWidth:"100%"}}/>:
+                      <div style={{height:46,display:"flex",alignItems:"center",justifyContent:"center",fontSize:22}}>✅</div>
+                    }
+                    <div style={{fontSize:11,fontWeight:700,color:"#0b1f3a"}}>{s.label}</div>
+                    {req.comments[s.role]&&<div style={{fontSize:10,color:"#888",marginTop:3,fontStyle:"italic"}}>"{req.comments[s.role]}"</div>}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          <div style={{fontSize:10,color:"#aaa",textAlign:"center",marginTop:16,borderTop:"1px solid #e8e4dc",paddingTop:12}}>
+            <div>All Correspondence should be addressed to the DCC Secretary</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Finance Module ─────────────────────────────────────────────────────────────
 function FinanceMod({ user, requests, setRequests, toast }) {
   const [sel,setSel]=useState(null); const [form,setForm]=useState(false);
   const [tab,setTab]=useState("all"); const [purp,setPurp]=useState(""); const [amt,setAmt]=useState("");
+  const [reqDate,setReqDate]=useState(today()); const [reqAttach,setReqAttach]=useState(null);
+  const attachRef=useRef(null);
 
   const isApprover = ["secretary","ads","conf_secretary","accountant","auditor","chairman","vice_chairman"].includes(user.role);
 
@@ -658,10 +804,20 @@ function FinanceMod({ user, requests, setRequests, toast }) {
   const sum={}; Object.keys(FIN_STATUS).forEach(k=>sum[k]=requests.filter(r=>r.status===k).length);
 
   const add=()=>{
-    if(!purp||!amt)return;
+    if(!purp||!amt||!reqDate)return;
     const id="REQ-"+String(requests.length+1).padStart(3,"0");
-    setRequests(r=>[...r,{id,requester:user.name,requesterEmail:user.email,date:today(),purpose:purp,amount:parseFloat(amt),status:"pending_secretary",signatures:{},comments:{}}]);
-    toast("✅ Request submitted!");setForm(false);setPurp("");setAmt("");
+    let attachData=null;
+    if(reqAttach){
+      const rd=new FileReader();
+      rd.onload=ev=>{
+        setRequests(r=>[...r,{id,requester:user.name,requesterRole:roleDisplay(user.role),requesterEmail:user.email,date:reqDate,purpose:purp,amount:parseFloat(amt),amountWords:nairaToWords(parseFloat(amt)),status:"pending_secretary",signatures:{},comments:{},attachment:{name:reqAttach.name,data:ev.target.result,size:(reqAttach.size/1024).toFixed(1)+" KB"}}]);
+        toast("✅ Request submitted!");setForm(false);setPurp("");setAmt("");setReqDate(today());setReqAttach(null);
+      };
+      rd.readAsDataURL(reqAttach);
+      return;
+    }
+    setRequests(r=>[...r,{id,requester:user.name,requesterRole:roleDisplay(user.role),requesterEmail:user.email,date:reqDate,purpose:purp,amount:parseFloat(amt),amountWords:nairaToWords(parseFloat(amt)),status:"pending_secretary",signatures:{},comments:{},attachment:null}]);
+    toast("✅ Request submitted!");setForm(false);setPurp("");setAmt("");setReqDate(today());setReqAttach(null);
   };
 
   const act=(id,action,sig,note)=>{
@@ -719,13 +875,40 @@ function FinanceMod({ user, requests, setRequests, toast }) {
       </div>
       {form&&(
         <div className="overlay">
-          <div className="modal" style={{maxWidth:520}}>
+          <div className="modal" style={{maxWidth:560}}>
             <MH title="New Financial Request" sub="Finance Module" onClose={()=>setForm(false)}/>
             <div style={{padding:"22px 24px 24px",display:"flex",flexDirection:"column",gap:14}}>
-              <div style={{background:"#f8f6f0",borderRadius:8,padding:"10px 14px",display:"flex",gap:10,alignItems:"center"}}><div style={{fontSize:22}}>👤</div><div><div style={{fontSize:13,fontWeight:600,color:"#0b1f3a"}}>{user.name}</div><div style={{fontSize:12,color:"#888"}}>{user.email}</div></div></div>
+              {/* Requester info auto-populated */}
+              <div style={{background:"linear-gradient(135deg,#0b1f3a,#1a3a5c)",borderRadius:10,padding:"12px 16px",display:"flex",gap:12,alignItems:"center"}}>
+                <div style={{width:38,height:38,background:"#c9a84c",borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontWeight:700,fontSize:14,flexShrink:0}}>{user.name.split(" ").map(n=>n[0]).join("").slice(0,2).toUpperCase()}</div>
+                <div>
+                  <div style={{fontSize:13,fontWeight:700,color:"#fff"}}>{user.name}</div>
+                  <div style={{fontSize:11,color:"#c9a84c"}}>{roleDisplay(user.role)} · {user.email}</div>
+                </div>
+              </div>
+              <div><label>Date of Request *</label><input type="date" value={reqDate} onChange={e=>setReqDate(e.target.value)}/></div>
               <div><label>Purpose / Description *</label><textarea rows={3} placeholder="Describe what the funds will be used for..." value={purp} onChange={e=>setPurp(e.target.value)} style={{resize:"vertical"}}/></div>
-              <div><label>Amount Requested (₦) *</label><input type="number" placeholder="e.g. 75000" value={amt} onChange={e=>setAmt(e.target.value)}/></div>
-              <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}><button className="btn btn-outline" onClick={()=>setForm(false)}>Cancel</button><button className="btn btn-gold" disabled={!purp||!amt} onClick={add}>Submit Request →</button></div>
+              <div>
+                <label>Amount Requested (₦) *</label>
+                <input type="number" placeholder="e.g. 75000" value={amt} onChange={e=>setAmt(e.target.value)}/>
+                {amt&&parseFloat(amt)>0&&<div style={{marginTop:6,background:"#f8f6f0",borderRadius:6,padding:"6px 12px",fontSize:12,color:"#555",fontStyle:"italic"}}>In words: <strong>{nairaToWords(parseFloat(amt))}</strong></div>}
+              </div>
+              {/* Attachment */}
+              <div>
+                <label>Supporting Document (optional)</label>
+                {reqAttach?
+                  <div style={{display:"flex",alignItems:"center",gap:10,background:"#eafbf0",borderRadius:8,padding:"8px 12px",border:"1px solid #abebc6"}}>
+                    <span style={{fontSize:20}}>📎</span>
+                    <div style={{flex:1,minWidth:0}}><div style={{fontSize:12,fontWeight:600,color:"#0b1f3a",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{reqAttach.name}</div><div style={{fontSize:10,color:"#888"}}>{(reqAttach.size/1024).toFixed(1)} KB</div></div>
+                    <button className="btn btn-red btn-sm" onClick={()=>setReqAttach(null)}>Remove</button>
+                  </div>:
+                  <div className="upload-box" onClick={()=>attachRef.current.click()} style={{padding:"12px 16px"}}>
+                    <span style={{fontSize:22}}>📤</span><span style={{fontSize:12,color:"#aaa",marginLeft:8}}>Click to attach a document (PDF, image, Word)</span>
+                  </div>
+                }
+                <input ref={attachRef} type="file" style={{display:"none"}} accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" onChange={e=>{const f=e.target.files[0];if(f)setReqAttach(f);e.target.value="";}}/>
+              </div>
+              <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}><button className="btn btn-outline" onClick={()=>{setForm(false);setPurp("");setAmt("");setReqDate(today());setReqAttach(null);}}>Cancel</button><button className="btn btn-gold" disabled={!purp||!amt||!reqDate} onClick={add}>Submit Request →</button></div>
             </div>
           </div>
         </div>
@@ -793,18 +976,19 @@ function LeaveDetail({ leave, user, users, onClose, onAct }) {
               <div style={{display:"flex",alignItems:"center"}}>
                 {[
                   {label:"Submit",done:true},
-                  {label:"Dept Head",done:["pending_admin","pending_finance","pending_chairman","approved"].includes(leave.status)},
-                  {label:"Admin & Personnel",done:["pending_finance","pending_chairman","approved"].includes(leave.status)},
-                  {label:"Finance",done:["pending_chairman","approved"].includes(leave.status)},
+                  {label:"Dept Head",done:["pending_admin","pending_finance","pending_auditor","pending_chairman","approved"].includes(leave.status)},
+                  {label:"Admin",done:["pending_finance","pending_auditor","pending_chairman","approved"].includes(leave.status)},
+                  {label:"Finance",done:["pending_auditor","pending_chairman","approved"].includes(leave.status)},
+                  {label:"Auditor",done:["pending_chairman","approved"].includes(leave.status)},
                   {label:"Chairman",done:leave.status==="approved"},
                 ].map((step,i,a)=>(
                   <div key={step.label} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center"}}>
                     <div style={{display:"flex",width:"100%",alignItems:"center"}}>
                       {i>0&&<div style={{flex:1,height:2,background:step.done?"#c9a84c":"#e0ddd6"}}/>}
-                      <div style={{width:24,height:24,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,fontWeight:700,flexShrink:0,background:step.done?"#c9a84c":"#e8e4dc",color:step.done?"#fff":"#aaa"}}>{step.done?"✓":i+1}</div>
+                      <div style={{width:22,height:22,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,fontWeight:700,flexShrink:0,background:step.done?"#c9a84c":"#e8e4dc",color:step.done?"#fff":"#aaa"}}>{step.done?"✓":i+1}</div>
                       {i<a.length-1&&<div style={{flex:1,height:2,background:step.done?"#c9a84c":"#e0ddd6"}}/>}
                     </div>
-                    <div style={{fontSize:8,marginTop:4,textAlign:"center",color:step.done?"#c9a84c":"#bbb",fontWeight:step.done?700:400}}>{step.label}</div>
+                    <div style={{fontSize:7,marginTop:4,textAlign:"center",color:step.done?"#c9a84c":"#bbb",fontWeight:step.done?700:400}}>{step.label}</div>
                   </div>
                 ))}
               </div>
@@ -850,7 +1034,7 @@ function LeaveDetail({ leave, user, users, onClose, onAct }) {
                 <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
                   <button className="btn btn-red" disabled={!sig} onClick={()=>onAct(leave.id,"reject",note,stage,sig,null)}>Reject</button>
                   <button className="btn btn-gold" disabled={!sig||(stage==="finance"&&!allowance)} onClick={()=>onAct(leave.id,"approve",note,stage,sig,stage==="finance"?allowance:null)}>
-                    {stage==="chairman"?"✓ Approve Leave & Generate Letter":"Forward →"}
+                    {stage==="chairman"?"✓ Approve Leave & Generate Letter":stage==="auditor"?"✓ Authorise & Forward to Chairman →":"Forward →"}
                   </button>
                 </div>
               </div>
@@ -883,12 +1067,17 @@ function LeaveLetter({ leave, users, onClose }) {
         </div>
         <div style={{padding:"32px 40px",fontFamily:"'Segoe UI','Trebuchet MS',sans-serif"}} id="leave-letter">
           {/* Letterhead */}
-          <div style={{textAlign:"center",borderBottom:"2px solid #0b1f3a",paddingBottom:20,marginBottom:24}}>
-            <img src={LOGO} alt="ECWA" style={{width:64,height:64,borderRadius:"50%",objectFit:"cover",border:"2px solid #c9a84c",marginBottom:10}}/>
-            <div style={{fontFamily:"Georgia,serif",fontSize:22,fontWeight:700,color:"#0b1f3a"}}>ECWA LAFIA DISTRICT CHURCH COUNCIL</div>
-            <div style={{fontSize:12,color:"#666",marginTop:4}}>Lafia, Nasarawa State, Nigeria</div>
-            <div style={{fontSize:11,color:"#888",marginTop:2}}>Tel: +234 (0) 800 ECWA LAFIA · Email: info@ecwalafia.org</div>
-            <div style={{display:"inline-block",background:"#c9a84c",color:"#fff",padding:"3px 16px",borderRadius:20,fontSize:11,fontWeight:700,marginTop:8}}>STAFF LEAVE APPROVAL LETTER</div>
+          <div style={{textAlign:"center",borderBottom:"3px double #0b1f3a",paddingBottom:20,marginBottom:24}}>
+            <div style={{display:"flex",justifyContent:"center",alignItems:"center",gap:16,marginBottom:8}}>
+              <img src={LOGO} alt="ECWA" style={{width:70,height:70,borderRadius:"50%",objectFit:"cover",border:"2px solid #c9a84c"}}/>
+              <div style={{textAlign:"left"}}>
+                <div style={{fontFamily:"Georgia,serif",fontSize:10,color:"#555",letterSpacing:1}}>EVANGELICAL CHURCH WINNING ALL</div>
+                <div style={{fontFamily:"Georgia,serif",fontSize:18,fontWeight:700,color:"#0b1f3a",lineHeight:1.2}}>ECWA Lafia District Church Council (LDCC)</div>
+                <div style={{fontSize:11,color:"#666",marginTop:3}}>Beside New Tomatoes Market, P.O. Box 329, Shinge Road Lafia, Nasarawa State</div>
+                <div style={{fontSize:11,color:"#555",marginTop:2}}>E-MAIL: lafiadcc@ecwang.org &nbsp;|&nbsp; Tel: 08166646683, 09053971264</div>
+              </div>
+            </div>
+            <div style={{display:"inline-block",background:"#c9a84c",color:"#fff",padding:"3px 20px",borderRadius:20,fontSize:11,fontWeight:700,marginTop:6,letterSpacing:1}}>STAFF LEAVE APPROVAL LETTER</div>
           </div>
           {/* Ref & Date */}
           <div style={{display:"flex",justifyContent:"space-between",marginBottom:20,fontSize:13}}>
@@ -944,8 +1133,9 @@ function LeaveLetter({ leave, users, onClose }) {
               </div>
             </div>
           )}
-          <div style={{fontSize:13,fontStyle:"italic",color:"#888",borderTop:"1px solid #e8e4dc",paddingTop:16,textAlign:"center"}}>
-            By the Authority of the DCC Chairman · ECWA Lafia District Church Council
+          <div style={{fontSize:11,color:"#888",borderTop:"1px solid #e8e4dc",paddingTop:14,marginTop:10}}>
+            <div style={{textAlign:"center",fontStyle:"italic",marginBottom:6}}>All Correspondence should be addressed to the DCC Secretary</div>
+            <div style={{textAlign:"center",fontSize:10,color:"#aaa"}}>Registered Trustees: Engr. Peter Nathaniel Tsado, Rev. Michael Adamu, Rev. Engr. Justus Ayodele Obilomo, Rev. Prof. Sunday B. Agang, Rev. Prof. Musa A.B. Gaiya, Rev. Dr. Isaac B. Laudarji, Elder Moses Y. Dembo, Prof. Umaru Kiro Kalgo, Pastor Engr. James Asonnibare and Prof. Basil Nwosu</div>
           </div>
         </div>
       </div>
@@ -995,8 +1185,8 @@ function LeaveMod({ user, users, leaves, setLeaves, toast }) {
         toast("Leave request rejected.","danger");
         return{...l,status:"rejected",approvals:newApprovals};
       }
-      // advance
-      const nextStatus = stage==="dept"?"pending_admin":stage==="admin"?"pending_finance":stage==="finance"?"pending_chairman":"approved";
+      // advance — dept→admin→finance→auditor→chairman→approved
+      const nextStatus = stage==="dept"?"pending_admin":stage==="admin"?"pending_finance":stage==="finance"?"pending_auditor":stage==="auditor"?"pending_chairman":"approved";
       const updates = {status:nextStatus,approvals:newApprovals};
       if(allowanceAmt) updates.allowance=parseFloat(allowanceAmt);
       if(nextStatus==="approved") toast("🎉 Leave approved! Letter ready for download.");
@@ -1607,7 +1797,7 @@ function StaffProf({ staff, user, users, canEdit, canEditDetails, lccs, onClose,
           {editing?(
             <div style={{background:"#f8f6f0",border:"2px solid #c9a84c",borderRadius:12,padding:20,marginBottom:24}}>
               <div style={{fontSize:13,fontWeight:700,color:"#0b1f3a",marginBottom:16}}>✏️ Edit Staff Details</div>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(240px,1fr))",gap:12}}>
                 <div><label>Full Name</label><input value={form.name} onChange={sf("name")}/></div>
                 <div><label>Email</label><input type="email" value={form.email} onChange={sf("email")} disabled={isSelfEdit} style={isSelfEdit?{background:"#f0f0f0",color:"#aaa"}:{}}/></div>
                 <div><label>Phone</label><input value={form.phone} onChange={sf("phone")}/></div>
@@ -1669,8 +1859,26 @@ function StaffProf({ staff, user, users, canEdit, canEditDetails, lccs, onClose,
             </div>
           )}
 
-          {/* Transfer History */}
-          {staff.transferHistory?.length>0&&(
+          {/* Signature section */}
+          {(canEdit||staff.signatureImage)&&(
+            <div style={{marginBottom:20}}>
+              <div style={{fontSize:12,fontWeight:700,color:"#5a5a7a",textTransform:"uppercase",letterSpacing:0.5,marginBottom:10}}>✍️ Signature</div>
+              {staff.signatureImage?(
+                <div style={{display:"flex",alignItems:"center",gap:14,background:"#f8f6f0",borderRadius:10,padding:"12px 16px"}}>
+                  <img src={staff.signatureImage} alt="Signature" style={{height:52,background:"#fff",border:"1px solid #e2ddd6",borderRadius:8,padding:4}}/>
+                  <div>
+                    <div style={{fontSize:12,color:"#27ae60",fontWeight:600}}>✅ Signature on file</div>
+                    {canEdit&&<SigUpdater staffId={staff.id} onUpdate={onUpdate}/>}
+                  </div>
+                </div>
+              ):canEdit?(
+                <div style={{background:"#fff8e8",border:"1px dashed #c9a84c",borderRadius:10,padding:"14px 16px",textAlign:"center"}}>
+                  <div style={{fontSize:12,color:"#e67e22",marginBottom:8}}>⚠️ No signature on file</div>
+                  <SigUpdater staffId={staff.id} onUpdate={onUpdate}/>
+                </div>
+              ):null}
+            </div>
+          )}
             <div style={{marginBottom:20}}>
               <div style={{fontSize:12,fontWeight:700,color:"#5a5a7a",textTransform:"uppercase",letterSpacing:0.5,marginBottom:8}}>🔄 Transfer History</div>
               {staff.transferHistory.map((t,i)=>(
@@ -1952,10 +2160,16 @@ function IDCard({ staff, onClose }) {
         {/* Printable content */}
         <div style={{padding:"28px 36px"}} id="bio-print">
           {/* Letterhead */}
-          <div style={{textAlign:"center",borderBottom:"2px solid #0b1f3a",paddingBottom:18,marginBottom:24}}>
-            <img src={LOGO} alt="ECWA" style={{width:64,height:64,borderRadius:"50%",objectFit:"cover",border:"2px solid #c9a84c",marginBottom:10}}/>
-            <div style={{fontFamily:"Georgia,serif",fontSize:18,fontWeight:700,color:"#0b1f3a"}}>ECWA LAFIA DISTRICT CHURCH COUNCIL</div>
-            <div style={{fontSize:12,color:"#666",marginTop:3}}>Lafia, Nasarawa State, Nigeria</div>
+          <div style={{textAlign:"center",borderBottom:"3px double #0b1f3a",paddingBottom:18,marginBottom:24}}>
+            <div style={{display:"flex",justifyContent:"center",alignItems:"center",gap:16,marginBottom:8}}>
+              <img src={LOGO} alt="ECWA" style={{width:70,height:70,borderRadius:"50%",objectFit:"cover",border:"2px solid #c9a84c"}}/>
+              <div style={{textAlign:"left"}}>
+                <div style={{fontFamily:"Georgia,serif",fontSize:10,color:"#555",letterSpacing:1}}>EVANGELICAL CHURCH WINNING ALL</div>
+                <div style={{fontFamily:"Georgia,serif",fontSize:18,fontWeight:700,color:"#0b1f3a",lineHeight:1.2}}>ECWA Lafia District Church Council (LDCC)</div>
+                <div style={{fontSize:11,color:"#666",marginTop:3}}>Beside New Tomatoes Market, P.O. Box 329, Shinge Road Lafia, Nasarawa State</div>
+                <div style={{fontSize:11,color:"#555",marginTop:2}}>E-MAIL: lafiadcc@ecwang.org &nbsp;|&nbsp; Tel: 08166646683, 09053971264</div>
+              </div>
+            </div>
             <div style={{display:"inline-block",background:"#0b1f3a",color:"#c9a84c",padding:"3px 18px",borderRadius:20,fontSize:11,fontWeight:700,marginTop:8,letterSpacing:1}}>STAFF PERSONAL DATA FORM</div>
           </div>
 
@@ -2035,20 +2249,17 @@ function IDCard({ staff, onClose }) {
             </div>
           ))}
 
-          {/* Signature section */}
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:20,marginTop:28,paddingTop:20,borderTop:"1px solid #e8e4dc"}}>
-            {[["Staff Signature","Date"],["Supervisor","Date"],["Admin & Personnel","Date"]].map(([label,d])=>(
-              <div key={label} style={{textAlign:"center"}}>
-                <div style={{height:50,borderBottom:"1px solid #0b1f3a",marginBottom:4}}/>
-                <div style={{fontSize:10,color:"#555",fontWeight:600}}>{label}</div>
-                <div style={{height:30,borderBottom:"1px solid #0b1f3a",marginTop:10,marginBottom:4}}/>
-                <div style={{fontSize:10,color:"#888"}}>{d}</div>
-              </div>
-            ))}
-          </div>
-
-          <div style={{fontSize:10,color:"#aaa",textAlign:"center",marginTop:20,fontStyle:"italic"}}>
-            ECWA Lafia District Church Council · Generated {fdate(today())} · Confidential
+          {/* Staff Signature on biodata */}
+          {staff.signatureImage&&(
+            <div style={{marginTop:24,paddingTop:16,borderTop:"1px solid #e8e4dc"}}>
+              <div style={{fontSize:11,color:"#5a5a7a",fontWeight:700,textTransform:"uppercase",letterSpacing:0.5,marginBottom:8}}>Staff Signature</div>
+              <img src={staff.signatureImage} alt="Signature" style={{height:52,border:"1px solid #e2ddd6",borderRadius:6,background:"#fafaf8"}}/>
+              <div style={{fontSize:10,color:"#888",marginTop:4}}>{staff.name} — {fdate(today())}</div>
+            </div>
+          )}
+          <div style={{fontSize:10,color:"#aaa",textAlign:"center",marginTop:20,fontStyle:"italic",borderTop:"1px solid #e8e4dc",paddingTop:12}}>
+            <div>All Correspondence should be addressed to the DCC Secretary</div>
+            <div style={{marginTop:4}}>ECWA Lafia District Church Council · Generated {fdate(today())} · Confidential</div>
           </div>
         </div>
       </div>
@@ -2166,8 +2377,8 @@ function AttendanceMod({ user, users, attendance, setAttendance, leaves, toast }
   };
 
   const clockOut = () => {
-    // Chairman and Vice Chairman clock out directly — no daily report required
-    if(["chairman","vice_chairman"].includes(user.role)){
+    // Chairman, Vice Chairman and Secretary clock out directly — no daily report required
+    if(["chairman","vice_chairman","secretary","ads"].includes(user.role)){
       const timeStr2=new Date().toTimeString().slice(0,5);
       setAttendance(a=>a.map(r=>r.userId===user.id&&r.date===todayStr?{...r,clockOut:timeStr2}:r));
       toast("✅ Clocked out at "+timeStr2);
@@ -2535,7 +2746,10 @@ function SignUp({ users, lccs, setLccs, onSignUp, onGo }) {
   const [step,setStep]=useState(1); const [cat,setCat]=useState("");
   const [f,setF]=useState({name:"",email:"",pw:"",pw2:"",phone:"",dob:"",doj:"",dept:"",jobTitle:"",role:"",rank:"",lc_ph:"",lcc:"",newLcc:"",lcc_overseen:"",gradeLevel:""});
   const [er,setEr]=useState(""); const [ok,setOk]=useState(false);
+  const [showPw,setShowPw]=useState(false); const [showPw2,setShowPw2]=useState(false);
+  const [signatureImage,setSignatureImage]=useState(null); const [showSigPad,setShowSigPad]=useState(false);
   const s=k=>e=>setF(p=>({...p,[k]:e.target.value}));
+  const deptRoles = f.dept ? OFFICE_ROLES.filter(r=>r.dept===f.dept) : OFFICE_ROLES;
 
   const go=async ()=>{
     setEr("");
@@ -2547,15 +2761,14 @@ function SignUp({ users, lccs, setLccs, onSignUp, onGo }) {
     if(cat==="office"&&!f.jobTitle){setEr("Please select a job title.");return;}
     if(cat==="office"&&!f.dept){setEr("Please select your department.");return;}
     if(cat==="pastor"&&(!f.rank||!f.lc_ph||!f.lcc)){setEr("Please fill in your rank, LC/PH and LCC.");return;}
-    if(cat==="lo"&&!f.lcc_overseen){setEr("Please select the LCC you oversee.");return;}
     if(cat==="pastor"&&f.lcc==="__new__"&&!f.newLcc){setEr("Please type the new LCC name.");return;}
+    if(!signatureImage){setEr("Please draw your signature before submitting.");return;}
 
     if(cat==="pastor"&&f.newLcc&&!lccs.includes(f.newLcc)){setLccs(l=>[...l,f.newLcc]);}
     const finalLcc=cat==="pastor"?(f.lcc==="__new__"?f.newLcc:f.lcc):undefined;
     const roleObj = OFFICE_ROLES.find(r=>r.title===f.jobTitle);
-    const role = cat==="pastor"?"pastor":cat==="lo"?"lo":(roleObj?.role||"staff");
+    const role = cat==="pastor"?"pastor":(roleObj?.role||"staff");
     const hashedPw = await hashPassword(f.pw);
-
     onSignUp({
       name:f.name,email:f.email,password:hashedPw,role,category:cat,
       phone:f.phone,dob:f.dob||undefined,doj:f.doj||undefined,
@@ -2564,10 +2777,9 @@ function SignUp({ users, lccs, setLccs, onSignUp, onGo }) {
       rank:cat==="pastor"?f.rank:undefined,
       lc_ph:cat==="pastor"?f.lc_ph:undefined,
       lcc:cat==="pastor"?finalLcc:undefined,
-      lcc_overseen:cat==="lo"?f.lcc_overseen:undefined,
       gradeLevel:f.gradeLevel||undefined,
-      gradePending:true,
-      approved:false,
+      gradePending:true, approved:false,
+      signatureImage:signatureImage||null,
       docs:{},customDocSections:[],transferHistory:[],
     });
     setOk(true);
@@ -2589,7 +2801,6 @@ function SignUp({ users, lccs, setLccs, onSignUp, onGo }) {
     <div style={{maxWidth:480,width:"100%",margin:"0 auto"}} className="fade-in">
       <h2 style={{fontFamily:"Georgia,serif",color:"#fff",fontSize:26,marginBottom:4}}>Create Account</h2>
       <p style={{color:"rgba(255,255,255,0.4)",fontSize:13,marginBottom:22}}>Join the ECWA Lafia DCC Portal</p>
-
       {step===1&&(
         <div style={{display:"flex",flexDirection:"column",gap:12}}>
           <p style={{color:"rgba(255,255,255,0.6)",fontSize:13,marginBottom:4}}>I am a...</p>
@@ -2608,13 +2819,10 @@ function SignUp({ users, lccs, setLccs, onSignUp, onGo }) {
           <div style={{textAlign:"center"}}><button className="link-btn" onClick={()=>onGo("login")}>Sign In instead</button></div>
         </div>
       )}
-
       {step===2&&(
         <div style={{background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:14,padding:24,display:"flex",flexDirection:"column",gap:12}}>
           <button onClick={()=>setStep(1)} style={{background:"none",border:"none",color:"#c9a84c",cursor:"pointer",fontSize:12,fontWeight:600,alignSelf:"flex-start",padding:0}}>← Back</button>
-          <div style={{fontSize:13,color:"rgba(255,255,255,0.5)",marginBottom:4}}>
-            {cat==="office"?"🏢 Office Staff Registration":cat==="pastor"?"⛪ Pastor Registration":"🏘️ Local Overseer Registration"}
-          </div>
+          <div style={{fontSize:13,color:"rgba(255,255,255,0.5)",marginBottom:4}}>{cat==="office"?"🏢 Office Staff Registration":"⛪ Pastor Registration"}</div>
           {er&&<div className="err-box">{er}</div>}
           <div><label style={{color:"rgba(255,255,255,0.5)"}}>Full Name *</label><input placeholder="e.g. Bro. John Danladi" value={f.name} onChange={s("name")}/></div>
           <div><label style={{color:"rgba(255,255,255,0.5)"}}>Email Address *</label><input type="email" placeholder="e.g. john@ecwalafia.org" value={f.email} onChange={s("email")}/></div>
@@ -2623,71 +2831,76 @@ function SignUp({ users, lccs, setLccs, onSignUp, onGo }) {
             <div><label style={{color:"rgba(255,255,255,0.5)"}}>Date of Birth</label><input type="date" value={f.dob} onChange={s("dob")}/></div>
             <div style={{gridColumn:"1/-1"}}><label style={{color:"rgba(255,255,255,0.5)"}}>Date of Employment</label><input type="date" value={f.doj} onChange={s("doj")}/></div>
           </div>
-
-          {cat==="office"&&(
-            <>
-              <div><label style={{color:"rgba(255,255,255,0.5)"}}>Department *</label>
-                <select value={f.dept} onChange={s("dept")}>
-                  <option value="">— Select department —</option>
-                  {DEPARTMENTS.map(d=><option key={d.id} value={d.id}>{d.label}</option>)}
-                </select>
+          {cat==="office"&&(<>
+            <div><label style={{color:"rgba(255,255,255,0.5)"}}>Department *</label>
+              <select value={f.dept} onChange={e=>setF(p=>({...p,dept:e.target.value,jobTitle:""}))}>
+                <option value="">— Select department first —</option>
+                {DEPARTMENTS.filter(d=>d.id!=="executive").map(d=><option key={d.id} value={d.id}>{d.label}</option>)}
+                <option value="executive">Executive (Chairman / Vice Chairman)</option>
+              </select>
+            </div>
+            <div><label style={{color:"rgba(255,255,255,0.5)"}}>Job Title *</label>
+              <select value={f.jobTitle} onChange={s("jobTitle")} disabled={!f.dept}>
+                <option value="">{f.dept?"— Select your title —":"— Select department first —"}</option>
+                {deptRoles.map(r=><option key={r.role} value={r.title}>{r.title}</option>)}
+              </select>
+            </div>
+            <div><label style={{color:"rgba(255,255,255,0.5)"}}>Grade Level (self-declared)</label>
+              <select value={f.gradeLevel} onChange={s("gradeLevel")}><option value="">— Select grade level —</option>{GRADE_LEVELS.flatMap(g=>Array.from({length:15},(_,i)=>`${g}/${i+1}`)).map(g=><option key={g} value={g}>{g}</option>)}</select>
+            </div>
+          </>)}
+          {cat==="pastor"&&(<>
+            <div><label style={{color:"rgba(255,255,255,0.5)"}}>Pastor Rank *</label>
+              <select value={f.rank} onChange={s("rank")}><option value="">— Select rank —</option>{PASTOR_RANKS.map(r=><option key={r} value={r}>{r}</option>)}</select>
+            </div>
+            <div><label style={{color:"rgba(255,255,255,0.5)"}}>LCC *</label>
+              <select value={f.lcc} onChange={e=>setF(p=>({...p,lcc:e.target.value,lc_ph:""}))}>
+                <option value="">— Select LCC —</option>{lccs.map(l=><option key={l} value={l}>{l} LCC</option>)}<option value="__new__">+ Add new LCC...</option>
+              </select>
+            </div>
+            {f.lcc==="__new__"&&<div><label style={{color:"rgba(255,255,255,0.5)"}}>New LCC Name *</label><input placeholder="Type new LCC name..." value={f.newLcc} onChange={s("newLcc")}/></div>}
+            <div><label style={{color:"rgba(255,255,255,0.5)"}}>LC / Prayer House *</label>
+              <select value={f.lc_ph} onChange={s("lc_ph")}><option value="">— Select church —</option>{churchOptions.map(c=><option key={c} value={c}>{c}</option>)}<option value="__other__">+ Not listed</option></select>
+            </div>
+            {f.lc_ph==="__other__"&&<div><label style={{color:"rgba(255,255,255,0.5)"}}>Church / PH Name *</label><input placeholder="e.g. ECWA New Harvest" value="" onChange={s("lc_ph")}/></div>}
+            <div><label style={{color:"rgba(255,255,255,0.5)"}}>Grade Level (self-declared)</label>
+              <select value={f.gradeLevel} onChange={s("gradeLevel")}><option value="">— Select grade level —</option>{GRADE_LEVELS.flatMap(g=>Array.from({length:15},(_,i)=>`${g}/${i+1}`)).map(g=><option key={g} value={g}>{g}</option>)}</select>
+            </div>
+          </>)}
+          {/* Password with show/hide */}
+          <div>
+            <label style={{color:"rgba(255,255,255,0.5)"}}>Password *</label>
+            <div style={{position:"relative"}}>
+              <input type={showPw?"text":"password"} placeholder="Minimum 6 characters" value={f.pw} onChange={s("pw")} style={{paddingRight:44}}/>
+              <button type="button" onClick={()=>setShowPw(v=>!v)} style={{position:"absolute",right:12,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",cursor:"pointer",fontSize:16,color:"#aaa",padding:0}}>{showPw?"🙈":"👁"}</button>
+            </div>
+          </div>
+          <div>
+            <label style={{color:"rgba(255,255,255,0.5)"}}>Confirm Password *</label>
+            <div style={{position:"relative"}}>
+              <input type={showPw2?"text":"password"} placeholder="Repeat password" value={f.pw2} onChange={s("pw2")} style={{paddingRight:44}}/>
+              <button type="button" onClick={()=>setShowPw2(v=>!v)} style={{position:"absolute",right:12,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",cursor:"pointer",fontSize:16,color:"#aaa",padding:0}}>{showPw2?"🙈":"👁"}</button>
+            </div>
+          </div>
+          {/* Signature — required */}
+          <div>
+            <label style={{color:"rgba(255,255,255,0.5)"}}>Your Signature * <span style={{fontSize:10,color:"#c9a84c",fontStyle:"italic"}}>(used on official documents)</span></label>
+            {signatureImage?(
+              <div style={{background:"rgba(255,255,255,0.05)",border:"1px solid rgba(201,168,76,0.4)",borderRadius:10,padding:12,display:"flex",alignItems:"center",gap:12}}>
+                <img src={signatureImage} alt="sig" style={{height:46,background:"#fff",borderRadius:6,padding:4}}/>
+                <div><div style={{fontSize:12,color:"#c9a84c",fontWeight:600}}>✅ Signature captured</div><button type="button" className="btn btn-outline btn-sm" style={{marginTop:6}} onClick={()=>setSignatureImage(null)}>Re-draw</button></div>
               </div>
-              <div><label style={{color:"rgba(255,255,255,0.5)"}}>Job Title *</label>
-                <select value={f.jobTitle} onChange={s("jobTitle")}>
-                  <option value="">— Select your title —</option>
-                  {OFFICE_ROLES.map(r=><option key={r.role} value={r.title}>{r.title}</option>)}
-                </select>
-              </div>
-              <div><label style={{color:"rgba(255,255,255,0.5)"}}>Grade Level (self-declared, pending verification)</label>
-                <select value={f.gradeLevel} onChange={s("gradeLevel")}>
-                  <option value="">— Select grade level —</option>
-                  {GRADE_LEVELS.flatMap(g=>Array.from({length:15},(_,i)=>`${g}/${i+1}`)).map(g=><option key={g} value={g}>{g}</option>)}
-                </select>
-              </div>
-            </>
-          )}
-
-          {cat==="pastor"&&(
-            <>
-              <div><label style={{color:"rgba(255,255,255,0.5)"}}>Pastor Rank *</label>
-                <select value={f.rank} onChange={s("rank")}>
-                  <option value="">— Select rank —</option>
-                  {PASTOR_RANKS.map(r=><option key={r} value={r}>{r}</option>)}
-                </select>
-              </div>
-              <div><label style={{color:"rgba(255,255,255,0.5)"}}>LCC *</label>
-                <select value={f.lcc} onChange={e=>{s("lcc")(e);setF(p=>({...p,lc_ph:""}));}}>
-                  <option value="">— Select LCC —</option>
-                  {lccs.map(l=><option key={l} value={l}>{l} LCC</option>)}
-                  <option value="__new__">+ Add new LCC...</option>
-                </select>
-              </div>
-              {f.lcc==="__new__"&&<div><label style={{color:"rgba(255,255,255,0.5)"}}>New LCC Name *</label><input placeholder="Type new LCC name..." value={f.newLcc} onChange={s("newLcc")}/></div>}
-              <div><label style={{color:"rgba(255,255,255,0.5)"}}>LC / Prayer House *</label>
-                <select value={f.lc_ph} onChange={s("lc_ph")}>
-                  <option value="">— Select church —</option>
-                  {churchOptions.map(c=><option key={c} value={c}>{c}</option>)}
-                  <option value="__other__">+ Not listed (add manually)</option>
-                </select>
-              </div>
-              {f.lc_ph==="__other__"&&<div><label style={{color:"rgba(255,255,255,0.5)"}}>Church / Prayer House Name *</label><input placeholder="e.g. ECWA New Harvest" value={f.lc_ph==="__other__"?"":f.lc_ph} onChange={s("lc_ph")}/></div>}
-              <div><label style={{color:"rgba(255,255,255,0.5)"}}>Grade Level (self-declared)</label>
-                <select value={f.gradeLevel} onChange={s("gradeLevel")}>
-                  <option value="">— Select grade level —</option>
-                  {GRADE_LEVELS.flatMap(g=>Array.from({length:15},(_,i)=>`${g}/${i+1}`)).map(g=><option key={g} value={g}>{g}</option>)}
-                </select>
-              </div>
-            </>
-          )}
-
-          <div><label style={{color:"rgba(255,255,255,0.5)"}}>Password *</label><input type="password" placeholder="Minimum 6 characters" value={f.pw} onChange={s("pw")}/></div>
-          <div><label style={{color:"rgba(255,255,255,0.5)"}}>Confirm Password *</label><input type="password" placeholder="Repeat password" value={f.pw2} onChange={s("pw2")}/></div>
+            ):(
+              <button type="button" className="btn btn-outline" style={{width:"100%",color:"#c9a84c",borderColor:"rgba(201,168,76,0.4)"}} onClick={()=>setShowSigPad(true)}>✏️ Draw Your Signature</button>
+            )}
+          </div>
           <div className="info-box">ℹ️ All accounts are subject to approval by Admin & Personnel before you can sign in.</div>
           <button className="btn btn-gold" style={{width:"100%",marginTop:4}} onClick={go}>Create Account →</button>
           <div className="divider"><span>already have an account?</span></div>
           <div style={{textAlign:"center"}}><button className="link-btn" onClick={()=>onGo("login")}>Sign In instead</button></div>
         </div>
       )}
+      {showSigPad&&<SigPad onSave={d=>{setSignatureImage(d);setShowSigPad(false);}} onClose={()=>setShowSigPad(false)}/>}
     </div>
   );
 }
@@ -2838,14 +3051,13 @@ function Dashboard({ user, users, setUsers, requests, setRequests, leaves, setLe
         </div>
       )}
       <header style={{background:"#0b1f3a",position:"sticky",top:0,zIndex:100}}>
-        {/* Top row: logo + user actions */}
-        <div style={{padding:"0 16px",display:"flex",alignItems:"center",justifyContent:"space-between",height:56}}>
+        {/* Desktop: single row | Mobile: 3 rows via CSS */}
+        <div style={{padding:"0 16px",display:"flex",alignItems:"center",justifyContent:"space-between",height:56}} className="header-desktop-row">
           <div style={{display:"flex",alignItems:"center",gap:10}}>
             <img src={LOGO} alt="ECWA" style={{width:34,height:34,borderRadius:"50%",objectFit:"cover",border:"1.5px solid #c9a84c",flexShrink:0}}/>
             <div><div style={{fontFamily:"Georgia,serif",color:"#fff",fontSize:14,fontWeight:700,lineHeight:1.2}}>ECWA Lafia DCC</div><div style={{fontSize:9,color:"rgba(255,255,255,0.38)"}}>Staff Portal</div></div>
           </div>
           <div style={{display:"flex",alignItems:"center",gap:6}}>
-            {/* Notification bell */}
             <div style={{position:"relative"}}>
               <button className="btn-ghost" style={{fontSize:16,padding:"5px 8px"}} onClick={()=>setNotifOpen(o=>!o)}>
                 🔔{unreadCount>0&&<span style={{background:"#c0392b",color:"#fff",borderRadius:10,padding:"1px 5px",fontSize:10,marginLeft:2}}>{unreadCount}</span>}
@@ -2858,6 +3070,33 @@ function Dashboard({ user, users, setUsers, requests, setRequests, leaves, setLe
               <div style={{color:"#c9a84c",fontSize:9,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{roleDisplay(user.role)}</div>
             </div>
             <button className="btn-ghost" style={{fontSize:11,padding:"5px 8px"}} onClick={onLogout}>Exit</button>
+          </div>
+        </div>
+        {/* Mobile 3-row header */}
+        <div className="header-mobile">
+          {/* Row 1: Logo */}
+          <div style={{display:"flex",justifyContent:"center",alignItems:"center",padding:"8px 16px 4px"}}>
+            <img src={LOGO} alt="ECWA" style={{width:38,height:38,borderRadius:"50%",objectFit:"cover",border:"2px solid #c9a84c"}}/>
+          </div>
+          {/* Row 2: App name */}
+          <div style={{textAlign:"center",paddingBottom:6}}>
+            <div style={{fontFamily:"Georgia,serif",color:"#fff",fontSize:14,fontWeight:700}}>ECWA Lafia DCC</div>
+            <div style={{fontSize:10,color:"rgba(255,255,255,0.45)"}}>Staff Portal</div>
+          </div>
+          {/* Row 3: bell | id card | name+role | exit */}
+          <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,padding:"4px 16px 8px",borderTop:"1px solid rgba(255,255,255,0.08)"}}>
+            <div style={{position:"relative"}}>
+              <button className="btn-ghost" style={{fontSize:16,padding:"5px 8px"}} onClick={()=>setNotifOpen(o=>!o)}>
+                🔔{unreadCount>0&&<span style={{background:"#c0392b",color:"#fff",borderRadius:10,padding:"1px 5px",fontSize:10,marginLeft:2}}>{unreadCount}</span>}
+              </button>
+              {notifOpen&&<NotifPanel notifs={notifs} onRead={markRead} onClose={()=>setNotifOpen(false)}/>}
+            </div>
+            <button className="btn-ghost" style={{fontSize:14,padding:"5px 8px"}} onClick={()=>setIdCard(true)}>📋</button>
+            <div style={{textAlign:"center",flex:1,maxWidth:140}}>
+              <div style={{color:"#fff",fontSize:11,fontWeight:600,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{user.name.split(" ").slice(-1)[0]}</div>
+              <div style={{color:"#c9a84c",fontSize:9,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{roleDisplay(user.role)}</div>
+            </div>
+            <button className="btn-ghost" style={{fontSize:11,padding:"5px 10px",border:"1px solid rgba(255,255,255,0.2)",borderRadius:8}} onClick={onLogout}>Exit</button>
           </div>
         </div>
         {/* Bottom row: tabs scrollable */}
@@ -2882,20 +3121,22 @@ function Dashboard({ user, users, setUsers, requests, setRequests, leaves, setLe
           </div>
           {/* Pending summary widget */}
           {(pf>0||pl>0||unreadAnn>0||pwdReqs.filter(r=>r.status==="pending").length>0)&&(
-            <div style={{background:"linear-gradient(135deg,#0b1f3a,#1a3a5c)",borderRadius:14,padding:"16px 22px",marginBottom:24,display:"flex",gap:20,flexWrap:"wrap",alignItems:"center"}}>
-              <div style={{color:"rgba(255,255,255,0.6)",fontSize:12,fontWeight:700,textTransform:"uppercase",letterSpacing:0.5}}>⏳ Needs Attention</div>
-              {pf>0&&<div onClick={()=>setMod("finance")} style={{cursor:"pointer",background:"rgba(201,168,76,0.15)",border:"1px solid rgba(201,168,76,0.3)",borderRadius:10,padding:"8px 14px",textAlign:"center"}}><div style={{fontFamily:"Georgia,serif",color:"#c9a84c",fontSize:20,fontWeight:700}}>{pf}</div><div style={{color:"rgba(255,255,255,0.5)",fontSize:11}}>Finance</div></div>}
-              {pl>0&&<div onClick={()=>setMod("leave")} style={{cursor:"pointer",background:"rgba(201,168,76,0.15)",border:"1px solid rgba(201,168,76,0.3)",borderRadius:10,padding:"8px 14px",textAlign:"center"}}><div style={{fontFamily:"Georgia,serif",color:"#c9a84c",fontSize:20,fontWeight:700}}>{pl}</div><div style={{color:"rgba(255,255,255,0.5)",fontSize:11}}>Leave</div></div>}
-              {unreadAnn>0&&<div onClick={()=>setMod("announcements")} style={{cursor:"pointer",background:"rgba(201,168,76,0.15)",border:"1px solid rgba(201,168,76,0.3)",borderRadius:10,padding:"8px 14px",textAlign:"center"}}><div style={{fontFamily:"Georgia,serif",color:"#c9a84c",fontSize:20,fontWeight:700}}>{unreadAnn}</div><div style={{color:"rgba(255,255,255,0.5)",fontSize:11}}>Notices</div></div>}
-              {canPwdMgr&&pwdReqs.filter(r=>r.status==="pending").length>0&&<div onClick={()=>setMod("profile")} style={{cursor:"pointer",background:"rgba(192,57,43,0.2)",border:"1px solid rgba(192,57,43,0.4)",borderRadius:10,padding:"8px 14px",textAlign:"center"}}><div style={{fontFamily:"Georgia,serif",color:"#e74c3c",fontSize:20,fontWeight:700}}>{pwdReqs.filter(r=>r.status==="pending").length}</div><div style={{color:"rgba(255,255,255,0.5)",fontSize:11}}>Pwd Resets</div></div>}
+            <div style={{background:"linear-gradient(135deg,#0b1f3a,#1a3a5c)",borderRadius:14,padding:"16px 18px",marginBottom:24}}>
+              <div style={{color:"rgba(255,255,255,0.6)",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:0.5,marginBottom:12}}>⏳ Needs Attention</div>
+              <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+                {pf>0&&<div onClick={()=>setMod("finance")} style={{cursor:"pointer",flex:"1 1 auto",minWidth:80,background:"rgba(201,168,76,0.15)",border:"1px solid rgba(201,168,76,0.3)",borderRadius:10,padding:"10px 14px",textAlign:"center"}}><div style={{fontFamily:"Georgia,serif",color:"#c9a84c",fontSize:22,fontWeight:700}}>{pf}</div><div style={{color:"rgba(255,255,255,0.5)",fontSize:11}}>Finance</div></div>}
+                {pl>0&&<div onClick={()=>setMod("leave")} style={{cursor:"pointer",flex:"1 1 auto",minWidth:80,background:"rgba(201,168,76,0.15)",border:"1px solid rgba(201,168,76,0.3)",borderRadius:10,padding:"10px 14px",textAlign:"center"}}><div style={{fontFamily:"Georgia,serif",color:"#c9a84c",fontSize:22,fontWeight:700}}>{pl}</div><div style={{color:"rgba(255,255,255,0.5)",fontSize:11}}>Leave</div></div>}
+                {unreadAnn>0&&<div onClick={()=>setMod("announcements")} style={{cursor:"pointer",flex:"1 1 auto",minWidth:80,background:"rgba(201,168,76,0.15)",border:"1px solid rgba(201,168,76,0.3)",borderRadius:10,padding:"10px 14px",textAlign:"center"}}><div style={{fontFamily:"Georgia,serif",color:"#c9a84c",fontSize:22,fontWeight:700}}>{unreadAnn}</div><div style={{color:"rgba(255,255,255,0.5)",fontSize:11}}>Notices</div></div>}
+                {canPwdMgr&&pwdReqs.filter(r=>r.status==="pending").length>0&&<div onClick={()=>setMod("profile")} style={{cursor:"pointer",flex:"1 1 auto",minWidth:80,background:"rgba(192,57,43,0.2)",border:"1px solid rgba(192,57,43,0.4)",borderRadius:10,padding:"10px 14px",textAlign:"center"}}><div style={{fontFamily:"Georgia,serif",color:"#e74c3c",fontSize:22,fontWeight:700}}>{pwdReqs.filter(r=>r.status==="pending").length}</div><div style={{color:"rgba(255,255,255,0.5)",fontSize:11}}>Pwd Resets</div></div>}
+              </div>
             </div>
           )}
-          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:12}}>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:12}}>
             {tabs.map(t=>(
-              <div key={t.id} className="card" style={{padding:22,cursor:"pointer",border:"2px solid transparent",transition:"all 0.2s"}} onClick={()=>setMod(t.id)} onMouseEnter={e=>{e.currentTarget.style.borderColor="#c9a84c";e.currentTarget.style.transform="translateY(-3px)";}} onMouseLeave={e=>{e.currentTarget.style.borderColor="transparent";e.currentTarget.style.transform="none";}}>
-                <div style={{fontSize:28,marginBottom:8}}>{t.icon}</div>
-                <div style={{fontFamily:"Georgia,serif",fontSize:15,fontWeight:700,marginBottom:4}}>{t.label}</div>
-                {t.badge>0&&<div style={{marginTop:8,background:"#fef3e2",color:"#e67e22",padding:"4px 10px",borderRadius:8,fontSize:11,fontWeight:600}}>⏳ {t.badge} pending</div>}
+              <div key={t.id} className="card" style={{padding:"20px 14px",cursor:"pointer",border:"2px solid transparent",transition:"all 0.2s",textAlign:"center",display:"flex",flexDirection:"column",alignItems:"center",gap:6}} onClick={()=>setMod(t.id)} onMouseEnter={e=>{e.currentTarget.style.borderColor="#c9a84c";e.currentTarget.style.transform="translateY(-3px)";}} onMouseLeave={e=>{e.currentTarget.style.borderColor="transparent";e.currentTarget.style.transform="none";}}>
+                <div style={{fontSize:30,lineHeight:1}}>{t.icon}</div>
+                <div style={{fontFamily:"Georgia,serif",fontSize:14,fontWeight:700,color:"#0b1f3a",lineHeight:1.2}}>{t.label}</div>
+                {t.badge>0&&<div style={{background:"#fef3e2",color:"#e67e22",padding:"3px 10px",borderRadius:8,fontSize:11,fontWeight:600}}>⏳ {t.badge} pending</div>}
               </div>
             ))}
           </div>
