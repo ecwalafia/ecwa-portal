@@ -551,7 +551,7 @@ function Lightbox({ src, name, onClose }) {
 }
 
 // ── Notification Panel ─────────────────────────────────────────────────────────
-function NotifPanel({ notifs, onRead, onClose }) {
+function NotifPanel({ notifs, onRead, onClose, onNavigate }) {
   const unread = notifs.filter(n=>!n.read).length;
   return(
     <div className="notif-panel">
@@ -562,7 +562,7 @@ function NotifPanel({ notifs, onRead, onClose }) {
       <div style={{maxHeight:380,overflowY:"auto"}}>
         {notifs.length===0&&<div style={{padding:32,textAlign:"center",color:"#bbb",fontSize:13}}>No notifications yet</div>}
         {notifs.map(n=>(
-          <div key={n.id} onClick={()=>onRead(n.id)} style={{padding:"12px 18px",borderBottom:"1px solid #f5f3ef",cursor:"pointer",background:n.read?"#fff":"#fef9ee",transition:"background 0.2s"}}
+          <div key={n.id} onClick={()=>{onRead(n.id);if(n.id.startsWith("sra_")&&onNavigate){onNavigate("sunday");onClose();}}} style={{padding:"12px 18px",borderBottom:"1px solid #f5f3ef",cursor:"pointer",background:n.read?"#fff":"#fef9ee",transition:"background 0.2s"}}
             onMouseEnter={e=>e.currentTarget.style.background="#f8f6f0"} onMouseLeave={e=>e.currentTarget.style.background=n.read?"#fff":"#fef9ee"}>
             <div style={{display:"flex",gap:10,alignItems:"flex-start"}}>
               <span style={{fontSize:18,flexShrink:0}}>{n.icon||"🔔"}</span>
@@ -3258,7 +3258,7 @@ function Dashboard({ user, users, setUsers, requests, setRequests, leaves, setLe
 
   const canF = isOffice;
   const canL = true;
-  const canS = isPastor||isLO;
+  const canS = isPastor||isLO||["secretary","ads","conf_secretary","chairman","accountant"].includes(user.role);
   const canAtt = isOffice;
   const canAnn = true;
   const canPwdMgr = ["secretary","ads","conf_secretary","personnel"].includes(user.role);
@@ -3311,7 +3311,7 @@ function Dashboard({ user, users, setUsers, requests, setRequests, leaves, setLe
               <button className="btn-ghost" style={{fontSize:16,padding:"5px 8px"}} onClick={()=>setNotifOpen(o=>!o)}>
                 🔔{unreadCount>0&&<span style={{background:"#c0392b",color:"#fff",borderRadius:10,padding:"1px 5px",fontSize:10,marginLeft:2}}>{unreadCount}</span>}
               </button>
-              {notifOpen&&<NotifPanel notifs={notifs} onRead={markRead} onClose={()=>setNotifOpen(false)}/>}
+              {notifOpen&&<NotifPanel notifs={notifs} onRead={markRead} onClose={()=>setNotifOpen(false)} onNavigate={m=>{setMod(m);setNotifOpen(false);}}/>}
             </div>
             <button className="btn-ghost" style={{fontSize:11,padding:"5px 8px"}} onClick={()=>setIdCard(true)}>📋 Biodata</button>
             <div style={{textAlign:"right",maxWidth:110}}>
@@ -3340,7 +3340,7 @@ function Dashboard({ user, users, setUsers, requests, setRequests, leaves, setLe
               <button style={{background:"rgba(255,255,255,0.12)",border:"none",borderRadius:8,color:"#fff",padding:"7px 10px",cursor:"pointer",fontSize:16,display:"flex",alignItems:"center",gap:3,minWidth:38,justifyContent:"center"}} onClick={()=>setNotifOpen(o=>!o)}>
                 🔔{unreadCount>0&&<span style={{background:"#c0392b",color:"#fff",borderRadius:8,padding:"1px 5px",fontSize:9,fontWeight:700,marginLeft:1}}>{unreadCount}</span>}
               </button>
-              {notifOpen&&<NotifPanel notifs={notifs} onRead={markRead} onClose={()=>setNotifOpen(false)}/>}
+              {notifOpen&&<NotifPanel notifs={notifs} onRead={markRead} onClose={()=>setNotifOpen(false)} onNavigate={m=>{setMod(m);setNotifOpen(false);}}/>}
             </div>
             <button style={{background:"rgba(255,255,255,0.12)",border:"none",borderRadius:8,color:"#fff",padding:"7px 10px",cursor:"pointer",fontSize:16,minWidth:38,textAlign:"center"}} onClick={()=>setIdCard(true)}>📋</button>
             <button style={{background:"rgba(192,57,43,0.9)",border:"none",borderRadius:8,color:"#fff",padding:"7px 14px",cursor:"pointer",fontSize:12,fontWeight:700,letterSpacing:0.3}} onClick={onLogout}>Exit</button>
