@@ -1,39 +1,35 @@
 import { useState, useRef, useEffect } from "react";
 import { createClient } from "@supabase/supabase-js";
-import emailjs from "@emailjs/browser";
 
 // ── Supabase Client ────────────────────────────────────────────────────────────
 const SUPABASE_URL = "https://ttlfxmutfzdajgfryesn.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR0bGZ4bXV0ZnpkYWpnZnJ5ZXNuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI4MDI2NzUsImV4cCI6MjA4ODM3ODY3NX0.zMriVY2bOMpg5FHrMF2ll7PIuOlJ0imLCjU_Nhhe-z0";
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-// ── EmailJS Config ─────────────────────────────────────────────────────────────
-const EJS_SERVICE   = "service_yn1v1ou";
-const EJS_TPL_APPROVAL = "e6lonk3";   // Account approved + credentials
-const EJS_TPL_GENERIC  = "ko82075";   // Password reset, leave, finance alerts
+// ── EmailJS Config (REST API — no npm package needed) ──────────────────────────
+const EJS_SERVICE      = "service_yn1v1ou";
+const EJS_TPL_APPROVAL = "e6lonk3";
+const EJS_TPL_GENERIC  = "ko82075";
 const EJS_PUBLIC_KEY   = "cyXSI_7PBXxL4b_2L";
 
-// Initialise once
-emailjs.init(EJS_PUBLIC_KEY);
-
-// Helper — send approval email (template 1)
-async function sendApprovalEmail({ to_name, to_email, user_email, user_password }) {
+async function ejsSend(templateId, params) {
   try {
-    await emailjs.send(EJS_SERVICE, EJS_TPL_APPROVAL, {
-      to_name, to_email, user_email, user_password,
+    const res = await fetch("https://api.emailjs.com/api/v1.0/email/send", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ service_id: EJS_SERVICE, template_id: templateId, user_id: EJS_PUBLIC_KEY, template_params: params }),
     });
-    console.log("✅ Approval email sent to", to_email);
-  } catch(e) { console.error("EmailJS approval error:", e); }
+    if (!res.ok) console.error("EmailJS error:", await res.text());
+    else console.log("✅ Email sent to", params.to_email);
+  } catch(e) { console.error("EmailJS fetch error:", e); }
 }
 
-// Helper — send generic email (template 2)
+async function sendApprovalEmail({ to_name, to_email, user_email, user_password }) {
+  await ejsSend(EJS_TPL_APPROVAL, { to_name, to_email, user_email, user_password });
+}
+
 async function sendGenericEmail({ to_name, to_email, email_subject, email_body }) {
-  try {
-    await emailjs.send(EJS_SERVICE, EJS_TPL_GENERIC, {
-      to_name, to_email, email_subject, email_body,
-    });
-    console.log("✅ Email sent to", to_email);
-  } catch(e) { console.error("EmailJS generic error:", e); }
+  await ejsSend(EJS_TPL_GENERIC, { to_name, to_email, email_subject, email_body });
 }
 
 // ── Offline ECWA Logo (inline SVG as data URI) ─────────────────────────────────
@@ -102,12 +98,13 @@ const GlobalStyles = () => (
     @media print{
       .no-print{display:none!important;}
       .print-only{display:block!important;}
-      body{margin:0;padding:0;}
+      body{margin:0;padding:0;font-size:11px;}
       .overlay{position:static!important;background:none!important;padding:0!important;}
       .modal{box-shadow:none!important;border-radius:0!important;max-width:100%!important;width:100%!important;max-height:none!important;overflow:visible!important;}
       header,.mobile-tabs{display:none!important;}
       button{display:none!important;}
-      @page{margin:15mm;}
+      img[alt="sig"]{height:30px!important;max-width:110px!important;}
+      @page{margin:10mm;size:A4;}
     }
     .print-only{display:none;}
     .header-mobile{display:none;}
@@ -639,8 +636,9 @@ function SigUpdater({ staffId, onUpdate }) {
 }
 
 // ── Finance: Request Detail ───────────────────────────────────────────────────
-function ReqDetail({ req, user, onClose, onAction }) {
-  const [showSig,setShowSig]=useState(false); const [sig,setSig]=useState(null); const [note,setNote]=useState("");
+function ReqDetail({ req, user, users, onClose, onAction }) {
+  const savedSig = users?.find(u=>u.id===user.id)?.signatureImage||null;
+  const [showSig,setShowSig]=useState(false); const [sig,setSig]=useState(savedSig); const [note,setNote]=useState("");
   const [showPrint,setShowPrint]=useState(false);
   const isApprover = ["secretary","ads","conf_secretary"].includes(user.role) ? req.status==="pending_secretary"
     : user.role==="accountant" ? req.status==="pending_finance"
@@ -667,9 +665,14 @@ function ReqDetail({ req, user, onClose, onAction }) {
               <p style={{fontSize:13,lineHeight:1.7}}>{req.purpose}</p>
             </div>
             {req.attachment&&(
-              <div style={{display:"flex",alignItems:"center",gap:10,background:"#f0f9ff",border:"1px solid #aed6f1",borderRadius:8,padding:"10px 14px",marginBottom:18}}>
-                <span style={{fontSize:22}}>📎</span>
-                <div style={{flex:1,minWidth:0}}><div style={{fontSize:12,fontWeight:600,color:"#0b1f3a"}}>{req.attachment.name}</div><div style={{fontSize:10,color:"#888"}}>{req.attachment.size}</div></div>
+              <div style={{display:"flex",alignItems:"center",gap:10,background:"#f0f9ff",border:"1px solid #aed6f1",borderRadius:8,padding:"10px 14px",marginBottom:18,flexWrap:"wrap"}}>
+                <span style={{fontSize:22,flexShrink:0}}>📎</span>
+                <div style={{flex:1,minWidth:120}}>
+                  <div style={{fontSize:12,fontWeight:600,color:"#0b1f3a"}}>
+                    {req.attachment.name&&req.attachment.name.length>35&&/^[0-9]/.test(req.attachment.name)?"Supporting Document":req.attachment.name}
+                  </div>
+                  <div style={{fontSize:10,color:"#888"}}>{req.attachment.size}</div>
+                </div>
                 <a href={req.attachment.data} download={req.attachment.name} className="btn btn-outline btn-sm" style={{flexShrink:0}}>⬇ Download</a>
               </div>
             )}
@@ -707,8 +710,15 @@ function ReqDetail({ req, user, onClose, onAction }) {
                 <div style={{marginBottom:12}}><label>Comment (optional)</label><textarea rows={2} value={note} onChange={e=>setNote(e.target.value)} style={{resize:"vertical"}} placeholder="Add your remarks..."/></div>
                 <div style={{marginBottom:16}}>
                   <label>E-Signature *</label>
-                  {sig?<div style={{display:"flex",alignItems:"center",gap:10}}><img src={sig} alt="sig" style={{height:52,border:"1px solid #e2ddd6",borderRadius:8,background:"#fafaf8"}}/><button className="btn btn-outline" style={{padding:"6px 12px",fontSize:12}} onClick={()=>setSig(null)}>Re-sign</button></div>
-                    :<button className="btn btn-outline" style={{width:"100%"}} onClick={()=>setShowSig(true)}>✏️  Draw Your Signature</button>}
+                  {sig
+                    ?<div style={{display:"flex",alignItems:"center",gap:10,background:"#f8f6f0",borderRadius:8,padding:"8px 12px"}}>
+                      <img src={sig} alt="sig" style={{height:48,border:"1px solid #e2ddd6",borderRadius:8,background:"#fff"}}/>
+                      <div>
+                        <div style={{fontSize:11,color:"#27ae60",fontWeight:600}}>{savedSig===sig?"✅ Your saved signature":"✅ Signature ready"}</div>
+                        <button className="btn btn-outline" style={{padding:"3px 10px",fontSize:11,marginTop:4}} onClick={()=>setShowSig(true)}>Re-sign</button>
+                      </div>
+                    </div>
+                    :<button className="btn btn-outline" style={{width:"100%"}} onClick={()=>setShowSig(true)}>✏️ Draw Your Signature</button>}
                 </div>
                 <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
                   <button className="btn btn-red" disabled={!sig} onClick={()=>{onAction(req.id,"reject",sig,note);onClose();}}>Reject</button>
@@ -807,7 +817,7 @@ function FinancePrintForm({ req, onClose }) {
 }
 
 // ── Finance Module ─────────────────────────────────────────────────────────────
-function FinanceMod({ user, requests, setRequests, toast }) {
+function FinanceMod({ user, users, requests, setRequests, toast }) {
   const [sel,setSel]=useState(null); const [form,setForm]=useState(false);
   const [tab,setTab]=useState("all"); const [purp,setPurp]=useState(""); const [amt,setAmt]=useState("");
   const [reqDate,setReqDate]=useState(today()); const [reqAttach,setReqAttach]=useState(null);
@@ -972,7 +982,7 @@ function FinanceMod({ user, requests, setRequests, toast }) {
           </div>
         </div>
       )}
-      {sel&&<ReqDetail req={sel} user={user} onClose={()=>setSel(null)} onAction={act}/>}
+      {sel&&<ReqDetail req={sel} user={user} users={users} onClose={()=>setSel(null)} onAction={act}/>}
     </div>
   );
 }
@@ -980,7 +990,9 @@ function FinanceMod({ user, requests, setRequests, toast }) {
 // ── Leave: Detail & Letter ─────────────────────────────────────────────────────
 function LeaveDetail({ leave, user, users, onClose, onAct }) {
   const [note,setNote]=useState(""); const [allowance,setAllowance]=useState(leave.allowance||"");
-  const [showSig,setShowSig]=useState(false); const [sig,setSig]=useState(null);
+  const [showSig,setShowSig]=useState(false);
+  const savedSig = users.find(u=>u.id===user.id)?.signatureImage||null;
+  const [sig,setSig]=useState(savedSig);
   const [printMode,setPrintMode]=useState(false);
   const sc=LEAVE_STATUS[leave.status];
   const stage = canActLeave(user, leave, users);
@@ -1087,8 +1099,15 @@ function LeaveDetail({ leave, user, users, onClose, onAct }) {
                 <div style={{marginBottom:14}}><label>Note (optional)</label><textarea rows={2} value={note} onChange={e=>setNote(e.target.value)} style={{resize:"vertical"}} placeholder="Add a note..."/></div>
                 <div style={{marginBottom:16}}>
                   <label>E-Signature *</label>
-                  {sig?<div style={{display:"flex",alignItems:"center",gap:10}}><img src={sig} alt="sig" style={{height:52,border:"1px solid #e2ddd6",borderRadius:8,background:"#fafaf8"}}/><button className="btn btn-outline" style={{padding:"6px 12px",fontSize:12}} onClick={()=>setSig(null)}>Re-sign</button></div>
-                    :<button className="btn btn-outline" style={{width:"100%"}} onClick={()=>setShowSig(true)}>✏️  Draw Your Signature</button>}
+                  {sig
+                    ?<div style={{display:"flex",alignItems:"center",gap:10,background:"#f8f6f0",borderRadius:8,padding:"8px 12px"}}>
+                      <img src={sig} alt="sig" style={{height:48,border:"1px solid #e2ddd6",borderRadius:8,background:"#fff"}}/>
+                      <div>
+                        <div style={{fontSize:11,color:"#27ae60",fontWeight:600}}>{savedSig===sig?"✅ Your saved signature":"✅ Signature ready"}</div>
+                        <button className="btn btn-outline" style={{padding:"3px 10px",fontSize:11,marginTop:4}} onClick={()=>setShowSig(true)}>Re-sign</button>
+                      </div>
+                    </div>
+                    :<button className="btn btn-outline" style={{width:"100%"}} onClick={()=>setShowSig(true)}>✏️ Draw Your Signature</button>}
                 </div>
                 <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
                   <button className="btn btn-red" disabled={!sig} onClick={()=>onAct(leave.id,"reject",note,stage,sig,null)}>Reject</button>
@@ -1271,7 +1290,11 @@ function LeaveMod({ user, users, leaves, setLeaves, toast }) {
   };
 
   const displayLeaves = user.role==="pastor"? leaves.filter(l=>l.requesterEmail===user.email)
-    : user.role==="lo"? leaves.filter(l=>l.lcc===user.lcc_overseen)
+    : user.role==="lo"? (
+        tab==="pending"? leaves.filter(l=>l.lcc===user.lcc_overseen&&l.status==="pending_dept")
+        : tab==="mine"?  leaves.filter(l=>l.requesterEmail===user.email)
+        : leaves.filter(l=>l.lcc===user.lcc_overseen)
+      )
     : tab==="mine"? leaves.filter(l=>l.requesterEmail===user.email)
     : tab==="pending"? leaves.filter(l=>canActLeave(user,l,users)!==null)
     : leaves;
@@ -1544,7 +1567,17 @@ function SundayReportForm({ user, onSubmit, onClose }) {
             <div style={{fontSize:12,fontWeight:700,color:"#5a5a7a",textTransform:"uppercase",letterSpacing:0.5,marginBottom:10}}>💰 Standard Collections (included in 25%)</div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
               {SUNDAY_FIXED_ITEMS.map(item=>(
-                <div key={item.id}><label>{item.label} (₦)</label><input type="number" min="0" placeholder="0" value={cols[item.id]||""} onChange={e=>setCols(p=>({...p,[item.id]:e.target.value}))}/></div>
+                <div key={item.id}>
+                  <label>{item.label}</label>
+                  <div style={{position:"relative"}}>
+                    <span style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",color:"#aaa",fontWeight:600,fontSize:13,pointerEvents:"none"}}>₦</span>
+                    <input type="text" inputMode="decimal" placeholder="0.00" style={{paddingLeft:24}}
+                      value={cols[item.id]||""}
+                      onChange={e=>setCols(p=>({...p,[item.id]:e.target.value.replace(/[^0-9.]/g,"")}))}
+                      onBlur={e=>{const v=parseFloat(e.target.value);if(!isNaN(v))setCols(p=>({...p,[item.id]:v.toFixed(2)}))}}/> 
+                  </div>
+                  {cols[item.id]&&parseFloat(cols[item.id])>0&&<div style={{fontSize:10,color:"#888",marginTop:2}}>{money(parseFloat(cols[item.id]))}</div>}
+                </div>
               ))}
             </div>
           </div>
@@ -1559,7 +1592,16 @@ function SundayReportForm({ user, onSubmit, onClose }) {
             </div>
             {optItems.map(oi=>(
               <div key={oi.id} style={{display:"flex",gap:10,alignItems:"center",marginBottom:8}}>
-                <div style={{flex:1}}><label>{oi.label} (₦)</label><input type="number" min="0" placeholder="0" value={oi.amount} onChange={e=>setOptAmt(oi.id,e.target.value)}/></div>
+                <div style={{flex:1}}>
+                  <label>{oi.label}</label>
+                  <div style={{position:"relative"}}>
+                    <span style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",color:"#aaa",fontWeight:600,fontSize:13,pointerEvents:"none"}}>₦</span>
+                    <input type="text" inputMode="decimal" placeholder="0.00" style={{paddingLeft:24}}
+                      value={oi.amount}
+                      onChange={e=>setOptAmt(oi.id,e.target.value.replace(/[^0-9.]/g,""))}
+                      onBlur={e=>{const v=parseFloat(e.target.value);if(!isNaN(v))setOptAmt(oi.id,v.toFixed(2));}}/>
+                  </div>
+                </div>
                 <button className="btn btn-red btn-sm" style={{marginTop:20,flexShrink:0}} onClick={()=>removeOpt(oi.id)}>✕</button>
               </div>
             ))}
@@ -1570,7 +1612,16 @@ function SundayReportForm({ user, onSubmit, onClose }) {
             <div style={{fontSize:12,fontWeight:700,color:"#5a5a7a",textTransform:"uppercase",letterSpacing:0.5,marginBottom:8}}>➕ Other Collections</div>
             {others.map(o=>(
               <div key={o.id} style={{display:"flex",gap:10,alignItems:"center",marginBottom:8}}>
-                <div style={{flex:1}}><label>{o.label} (₦)</label><input type="number" min="0" placeholder="0" value={o.amount} onChange={e=>setOtherAmt(o.id,e.target.value)}/></div>
+                <div style={{flex:1}}>
+                  <label>{o.label}</label>
+                  <div style={{position:"relative"}}>
+                    <span style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",color:"#aaa",fontWeight:600,fontSize:13,pointerEvents:"none"}}>₦</span>
+                    <input type="text" inputMode="decimal" placeholder="0.00" style={{paddingLeft:24}}
+                      value={o.amount}
+                      onChange={e=>setOtherAmt(o.id,e.target.value.replace(/[^0-9.]/g,""))}
+                      onBlur={e=>{const v=parseFloat(e.target.value);if(!isNaN(v))setOtherAmt(o.id,v.toFixed(2));}}/>
+                  </div>
+                </div>
                 <button className="btn btn-red btn-sm" style={{marginTop:20,flexShrink:0}} onClick={()=>removeOther(o.id)}>✕</button>
               </div>
             ))}
@@ -1590,9 +1641,8 @@ function SundayReportForm({ user, onSubmit, onClose }) {
           {totalGross>0&&(
             <div style={{background:"linear-gradient(135deg,#0b1f3a,#1a3a5c)",borderRadius:12,padding:20,color:"#fff"}}>
               <div style={{fontSize:12,color:"#c9a84c",fontWeight:700,textTransform:"uppercase",letterSpacing:0.5,marginBottom:12}}>💰 Collection Summary</div>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12}}>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
                 <div><div style={{fontSize:10,color:"rgba(255,255,255,0.5)"}}>Total Gross</div><div style={{fontFamily:"Georgia,serif",fontSize:18,fontWeight:700,color:"#fff"}}>{money(totalGross)}</div></div>
-                <div><div style={{fontSize:10,color:"rgba(255,255,255,0.5)"}}>Remittance Base</div><div style={{fontFamily:"Georgia,serif",fontSize:18,fontWeight:700,color:"#c9a84c"}}>{money(remittanceBase)}</div></div>
                 <div><div style={{fontSize:10,color:"rgba(255,255,255,0.5)"}}>{fullRemittance?"100% DCC Remittance":"25% DCC Remittance"}</div><div style={{fontFamily:"Georgia,serif",fontSize:18,fontWeight:700,color:"#c9a84c"}}>{money(remittanceDue)}</div></div>
                 {!fullRemittance&&<div><div style={{fontSize:10,color:"rgba(255,255,255,0.5)"}}>75% Retained by LC</div><div style={{fontFamily:"Georgia,serif",fontSize:18,fontWeight:700,color:"#27ae60"}}>{money(remittanceBase-remittanceDue)}</div></div>}
               </div>
@@ -1608,11 +1658,34 @@ function SundayReportForm({ user, onSubmit, onClose }) {
 
 function SundayReportDetail({ report, user, users, setSundayReports, toast, onClose }) {
   const [showAppeal,setShowAppeal]=useState(false); const [appealText,setAppealText]=useState("");
+  const [appealAction,setAppealAction]=useState(null); const [appealNote,setAppealNote]=useState("");
   const totalAtt=(report.attendance.men||0)+(report.attendance.women||0)+(report.attendance.children||0);
+  const isAdmin=["secretary","ads","conf_secretary","chairman","accountant"].includes(user.role);
 
   const submitAppeal=()=>{
-    setSundayReports(rs=>rs.map(r=>r.id===report.id?{...r,appeal:{text:appealText,date:today(),status:"pending"}}:r));
-    toast("Appeal submitted. Admin and LO have been notified.");setShowAppeal(false);
+    setSundayReports(rs=>rs.map(r=>r.id===report.id?{...r,appeal:{text:appealText,date:today(),status:"pending",pastorEmail:report.pastorEmail||user.email,pastorName:report.pastorName}}:r));
+    const admins=users.filter(u=>["secretary","ads","conf_secretary"].includes(u.role));
+    admins.forEach(a=>sendGenericEmail({to_name:a.name,to_email:a.email,
+      email_subject:`Sunday Report Appeal — ${report.pastorName} (${fdate(report.date)})`,
+      email_body:`An appeal was submitted for a Sunday report.\n\nPastor: ${report.pastorName}\nChurch: ${report.lc_ph}\nDate: ${fdate(report.date)}\n\nAppeal:\n${appealText}\n\nPlease log in to review.\nhttps://ecwa-portal.onrender.com`}));
+    toast("Appeal submitted. Admin has been notified.");setShowAppeal(false);
+  };
+
+  const handleAppealDecision=(action)=>{
+    if(action==="resubmit"){
+      setSundayReports(rs=>rs.map(r=>r.id===report.id?{...r,submitted:false,appeal:{...r.appeal,status:"resubmit",adminNote:appealNote,adminBy:user.name,adminDate:today()}}:r));
+      sendGenericEmail({to_name:report.pastorName,to_email:report.appeal?.pastorEmail||"",
+        email_subject:"Sunday Report Returned for Correction — ECWA Lafia DCC",
+        email_body:`Your Sunday report for ${fdate(report.date)} has been returned for correction.\n\nAdmin Note: ${appealNote}\n\nPlease log in and resubmit.\nhttps://ecwa-portal.onrender.com`});
+      toast("Report returned to pastor for correction.");
+    } else {
+      setSundayReports(rs=>rs.map(r=>r.id===report.id?{...r,appeal:{...r.appeal,status:"accepted",adminNote:appealNote,adminBy:user.name,adminDate:today()}}:r));
+      sendGenericEmail({to_name:report.pastorName,to_email:report.appeal?.pastorEmail||"",
+        email_subject:"Sunday Report Appeal Accepted — ECWA Lafia DCC",
+        email_body:`Your appeal for the Sunday report dated ${fdate(report.date)} has been accepted.\n\nAdmin Note: ${appealNote||"No additional note."}\n\nECWA Lafia DCC`});
+      toast("Appeal accepted.");
+    }
+    setAppealAction(null);setAppealNote("");onClose();
   };
 
   return(
@@ -1620,7 +1693,6 @@ function SundayReportDetail({ report, user, users, setSundayReports, toast, onCl
       <div className="modal" style={{maxWidth:580}}>
         <MH title={report.id} sub="Sunday Report" onClose={onClose}/>
         <div style={{padding:"22px 24px"}}>
-          {/* Header */}
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:18,flexWrap:"wrap",gap:10}}>
             <div>
               <div style={{fontFamily:"Georgia,serif",fontSize:18,fontWeight:700,color:"#0b1f3a"}}>{fdate(report.date)}</div>
@@ -1628,11 +1700,12 @@ function SundayReportDetail({ report, user, users, setSundayReports, toast, onCl
             </div>
             <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
               {report.fullRemittance&&<span style={{background:"#fdecea",color:"#c0392b",padding:"3px 10px",borderRadius:10,fontSize:11,fontWeight:700}}>🔴 100% Remittance</span>}
-              {report.appeal&&<span style={{background:"#fef3e2",color:"#e67e22",padding:"3px 10px",borderRadius:10,fontSize:11,fontWeight:700}}>⚠️ Appeal Pending</span>}
+              {report.appeal&&<span style={{background:report.appeal.status==="accepted"?"#eafbf0":report.appeal.status==="resubmit"?"#eaf4fb":"#fef3e2",color:report.appeal.status==="accepted"?"#27ae60":report.appeal.status==="resubmit"?"#2980b9":"#e67e22",padding:"3px 10px",borderRadius:10,fontSize:11,fontWeight:700}}>
+                {report.appeal.status==="accepted"?"✅ Appeal Accepted":report.appeal.status==="resubmit"?"🔄 Returned for Correction":"⚠️ Appeal Pending"}
+              </span>}
             </div>
           </div>
 
-          {/* Attendance */}
           <div style={{background:"#eaf4fb",borderRadius:10,padding:"14px 18px",marginBottom:16}}>
             <div style={{fontSize:11,fontWeight:700,color:"#2980b9",textTransform:"uppercase",letterSpacing:0.5,marginBottom:10}}>👥 Attendance</div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:12}}>
@@ -1642,7 +1715,6 @@ function SundayReportDetail({ report, user, users, setSundayReports, toast, onCl
             </div>
           </div>
 
-          {/* Collections */}
           <div style={{marginBottom:16}}>
             <div style={{fontSize:11,fontWeight:700,color:"#5a5a7a",textTransform:"uppercase",letterSpacing:0.5,marginBottom:10}}>💰 Collections</div>
             {SUNDAY_FIXED_ITEMS.map(item=>(
@@ -1663,22 +1735,39 @@ function SundayReportDetail({ report, user, users, setSundayReports, toast, onCl
             ))}
           </div>
 
-          {/* Summary */}
+          {/* Fix #9 — Remittance Base removed */}
           <div style={{background:"linear-gradient(135deg,#0b1f3a,#1a3a5c)",borderRadius:12,padding:18,marginBottom:16}}>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12}}>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
               <div><div style={{fontSize:10,color:"rgba(255,255,255,0.5)"}}>Total Gross</div><div style={{fontFamily:"Georgia,serif",fontSize:16,fontWeight:700,color:"#fff"}}>{money(report.totalGross)}</div></div>
-              <div><div style={{fontSize:10,color:"rgba(255,255,255,0.5)"}}>Remittance Base</div><div style={{fontFamily:"Georgia,serif",fontSize:16,fontWeight:700,color:"#c9a84c"}}>{money(report.remittanceBase)}</div></div>
-              <div><div style={{fontSize:10,color:"rgba(255,255,255,0.5)"}}>{report.fullRemittance?"100% Due":"25% Due"}</div><div style={{fontFamily:"Georgia,serif",fontSize:16,fontWeight:700,color:"#c9a84c"}}>{money(report.remittanceDue)}</div></div>
+              <div><div style={{fontSize:10,color:"rgba(255,255,255,0.5)"}}>{report.fullRemittance?"100% DCC Remittance":"25% DCC Remittance"}</div><div style={{fontFamily:"Georgia,serif",fontSize:16,fontWeight:700,color:"#c9a84c"}}>{money(report.remittanceDue)}</div></div>
               {!report.fullRemittance&&<div><div style={{fontSize:10,color:"rgba(255,255,255,0.5)"}}>75% Retained by LC</div><div style={{fontFamily:"Georgia,serif",fontSize:16,fontWeight:700,color:"#27ae60"}}>{money(report.remittanceBase-report.remittanceDue)}</div></div>}
             </div>
           </div>
 
-          {/* Appeal */}
+          {/* Fix #4 — Full appeal workflow */}
           {report.appeal?(
             <div style={{background:"#fef3e2",border:"1px solid #f5c542",borderRadius:8,padding:"12px 14px",fontSize:13}}>
-              <div style={{fontWeight:700,color:"#e67e22",marginBottom:4}}>⚠️ Appeal Submitted</div>
-              <div style={{color:"#555"}}>{report.appeal.text}</div>
-              <div style={{fontSize:11,color:"#aaa",marginTop:4}}>{fdate(report.appeal.date)} · Status: {report.appeal.status}</div>
+              <div style={{fontWeight:700,color:"#e67e22",marginBottom:4}}>⚠️ Appeal: {report.appeal.text}</div>
+              <div style={{fontSize:11,color:"#aaa",marginTop:2}}>{fdate(report.appeal.date)} · Status: <strong>{report.appeal.status}</strong></div>
+              {report.appeal.adminNote&&<div style={{marginTop:6,background:"#fff",borderRadius:6,padding:"6px 10px",fontSize:12}}>Admin note: {report.appeal.adminNote} — <span style={{color:"#aaa"}}>{report.appeal.adminBy}, {fdate(report.appeal.adminDate)}</span></div>}
+              {isAdmin&&report.appeal.status==="pending"&&!appealAction&&(
+                <div style={{marginTop:10,display:"flex",gap:8,flexWrap:"wrap"}}>
+                  <button className="btn btn-outline btn-sm" onClick={()=>setAppealAction("accept")}>✅ Accept Appeal</button>
+                  <button className="btn btn-gold btn-sm" onClick={()=>setAppealAction("resubmit")}>🔄 Return for Correction</button>
+                </div>
+              )}
+              {appealAction&&(
+                <div style={{marginTop:10}}>
+                  <label style={{fontSize:12,fontWeight:700}}>{appealAction==="resubmit"?"Instructions for Pastor *":"Note (optional)"}</label>
+                  <textarea rows={2} value={appealNote} onChange={e=>setAppealNote(e.target.value)} placeholder={appealAction==="resubmit"?"What needs to be corrected?":"Any note..."} style={{resize:"vertical",marginTop:4,marginBottom:8}}/>
+                  <div style={{display:"flex",gap:8}}>
+                    <button className="btn btn-outline btn-sm" onClick={()=>setAppealAction(null)}>Cancel</button>
+                    <button className="btn btn-gold btn-sm" disabled={appealAction==="resubmit"&&!appealNote.trim()} onClick={()=>handleAppealDecision(appealAction)}>
+                      {appealAction==="resubmit"?"Send Back to Pastor →":"Confirm Accept →"}
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           ):user.role==="pastor"&&(
             <div>
@@ -1953,8 +2042,12 @@ function StaffProf({ staff, user, users, canEdit, canEditDetails, lccs, onClose,
               ):null}
             </div>
           )}
+
+          {/* Transfer History — pastors only */}
+          {staff.category==="pastor"&&(
             <div style={{marginBottom:20}}>
               <div style={{fontSize:12,fontWeight:700,color:"#5a5a7a",textTransform:"uppercase",letterSpacing:0.5,marginBottom:8}}>🔄 Transfer History</div>
+              {(staff.transferHistory||[]).length===0?<div style={{fontSize:12,color:"#bbb",paddingBottom:4}}>No transfers on record.</div>:null}
               {(staff.transferHistory||[]).map((t,i)=>(
                 <div key={i} style={{background:"#f8f6f0",borderRadius:8,padding:"8px 12px",marginBottom:6,fontSize:12}}>
                   <span style={{fontWeight:700}}>{fdate(t.date)}</span> — From <strong>{t.fromLcc} LCC · {t.fromChurch}</strong> to <strong>{t.toLcc} LCC · {t.toChurch}</strong>
@@ -2116,24 +2209,26 @@ function PersonnelMod({ user, users, setUsers, lccs, toast }) {
           <div style={{fontFamily:"Georgia,serif",fontSize:15,fontWeight:700,color:"#0b1f3a",marginBottom:12}}>⏳ Pending Account Approvals ({pendingAccounts.length})</div>
           <div style={{display:"flex",flexDirection:"column",gap:8}}>
             {pendingAccounts.map(u=>(
-              <div key={u.id} style={{display:"flex",alignItems:"center",gap:12,padding:"8px 12px",background:"#fef9ee",borderRadius:8,border:"1px solid #f5c542"}}>
-                <div style={{width:36,height:36,background:"#e67e22",borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontSize:13,fontWeight:700,flexShrink:0}}>{u.name.split(" ").map(n=>n[0]).join("").slice(0,2).toUpperCase()}</div>
-                <div style={{flex:1,minWidth:0}}>
+              <div key={u.id} style={{display:"flex",alignItems:"flex-start",gap:10,padding:"10px 12px",background:"#fef9ee",borderRadius:8,border:"1px solid #f5c542",flexWrap:"wrap"}}>
+                <div style={{width:36,height:36,background:"#e67e22",borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontSize:13,fontWeight:700,flexShrink:0,marginTop:2}}>{u.name.split(" ").map(n=>n[0]).join("").slice(0,2).toUpperCase()}</div>
+                <div style={{flex:1,minWidth:140}}>
                   <div style={{fontWeight:700,fontSize:13,color:"#0b1f3a"}}>{u.name}</div>
                   <div style={{fontSize:11,color:"#888"}}>{u.email} · {u.category==="pastor"?u.rank:u.jobTitle||roleDisplay(u.role)}</div>
                   <span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:10,marginTop:3,display:"inline-block",background:u.category==="pastor"?"#f5eefb":"#eaf4fb",color:u.category==="pastor"?"#8e44ad":"#2980b9"}}>{u.category==="pastor"?"⛪ Pastor":"🏢 Office Staff"}</span>
                 </div>
-                <button className="btn btn-gold" style={{padding:"6px 16px",fontSize:12,flexShrink:0}} onClick={()=>{
-                  upd(u.id,{approved:true});
-                  sendApprovalEmail({
-                    to_name: u.name,
-                    to_email: u.email,
-                    user_email: u.email,
-                    user_password: "(your chosen password)",
-                  });
-                  toast("✅ Account approved. Login email sent to "+u.email);
-                }}>✅ Approve</button>
-                <button className="btn btn-outline" style={{padding:"6px 12px",fontSize:12,flexShrink:0}} onClick={()=>setSel(u)}>View Profile</button>
+                <div style={{display:"flex",gap:8,flexShrink:0,flexWrap:"wrap",alignItems:"center"}}>
+                  <button className="btn btn-gold" style={{padding:"6px 16px",fontSize:12}} onClick={()=>{
+                    upd(u.id,{approved:true});
+                    sendApprovalEmail({
+                      to_name: u.name,
+                      to_email: u.email,
+                      user_email: u.email,
+                      user_password: "(your chosen password)",
+                    });
+                    toast("✅ Account approved. Login email sent to "+u.email);
+                  }}>✅ Approve</button>
+                  <button className="btn btn-outline" style={{padding:"6px 12px",fontSize:12}} onClick={()=>setSel(u)}>View Profile</button>
+                </div>
               </div>
             ))}
           </div>
@@ -2620,7 +2715,7 @@ function AttendanceMod({ user, users, attendance, setAttendance, leaves, toast }
                         <td key={d} style={{padding:"8px",textAlign:"center"}}>
                           <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:3}}>
                             <span className={`badge ${st.cls}`} style={{fontSize:9,padding:"2px 6px"}}>{st.icon}</span>
-                            {rec?.dailyReport?<span style={{fontSize:9,color:"#27ae60"}}>📋{(rec.acks||[]).length>0?` ✅${rec.acks.length}`:""}{(rec.comments||[]).length>0?` 💬${rec.comments.length}`:""}</span>:<span style={{fontSize:9,color:"#ddd"}}>—</span>}
+                            {rec?.dailyReport?<span style={{fontSize:9,color:"#27ae60",cursor:"pointer",textDecoration:"underline",marginTop:2,display:"block"}} onClick={()=>setSelRecord(rec)}>📋 View{(rec.acks||[]).length>0?` ✅${rec.acks.length}`:""}{(rec.comments||[]).length>0?` 💬${rec.comments.length}`:""}</span>:<span style={{fontSize:9,color:"#ddd"}}>—</span>}
                             {rec&&!rec.clockOut&&!rec.adminClosed&&isAdmin&&(
                               <button style={{fontSize:9,background:"#fef3e2",color:"#e67e22",border:"none",borderRadius:4,padding:"1px 5px",cursor:"pointer"}} onClick={()=>{setAdminClose(rec);setAdminNote("");}}>Fix</button>
                             )}
@@ -2800,6 +2895,10 @@ function ForgotPassword({ users, pwdReqs, setPwdReqs, onBack }) {
     if(!u){setEr("No account found with this email.");return;}
     if(pwdReqs.find(r=>r.email.toLowerCase()===email.toLowerCase()&&r.status==="pending")){setEr("A reset request is already pending for this email.");return;}
     setPwdReqs(r=>[...r,{id:"PWD-"+String(r.length+1).padStart(3,"0"),email:u.email,name:u.name,requestDate:today(),status:"pending",newPassword:"",resolvedBy:"",resolvedDate:""}]);
+    const admins=users.filter(a=>["secretary","ads","conf_secretary","personnel"].includes(a.role));
+    admins.forEach(a=>sendGenericEmail({to_name:a.name,to_email:a.email,
+      email_subject:"Password Reset Request — ECWA Lafia DCC",
+      email_body:`${u.name} (${u.email}) has submitted a password reset request.\n\nPlease log in to process this request.\nhttps://ecwa-portal.onrender.com`}));
     setSent(true);
   };
   if(sent)return(
@@ -2818,6 +2917,9 @@ function ForgotPassword({ users, pwdReqs, setPwdReqs, onBack }) {
         {er&&<div className="err-box">{er}</div>}
         <div><label style={{color:"rgba(255,255,255,0.5)"}}>Email Address</label><input type="email" placeholder="your@email.com" value={email} onChange={e=>setEmail(e.target.value)} onKeyDown={e=>e.key==="Enter"&&submit()}/></div>
         <button className="btn btn-gold" style={{width:"100%"}} onClick={submit}>Send Reset Request →</button>
+        <div style={{background:"rgba(201,168,76,0.08)",border:"1px solid rgba(201,168,76,0.2)",borderRadius:8,padding:"10px 14px",fontSize:11,color:"rgba(255,255,255,0.45)",lineHeight:1.6}}>
+          ℹ️ <strong style={{color:"#c9a84c"}}>First-time admin?</strong> Contact KrizTechs on <a href="tel:08166646683" style={{color:"#c9a84c"}}>08166646683</a> to have your initial password set directly.
+        </div>
         <div style={{textAlign:"center"}}><button className="link-btn" onClick={onBack}>← Back to Sign In</button></div>
       </div>
     </div>
@@ -3208,25 +3310,27 @@ function Dashboard({ user, users, setUsers, requests, setRequests, leaves, setLe
         </div>
 
         {/* Mobile header — compact single row */}
-        <div className="header-mobile" style={{padding:"6px 12px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
-          {/* Left: Logo + name */}
-          <div style={{display:"flex",alignItems:"center",gap:8,minWidth:0}}>
-            <img src={LOGO} alt="ECWA" style={{width:30,height:30,borderRadius:"50%",objectFit:"cover",border:"1.5px solid #c9a84c",flexShrink:0}}/>
+        <div className="header-mobile" style={{padding:"8px 14px",display:"flex",alignItems:"center",justifyContent:"space-between",minHeight:54}}>
+          {/* Left: Logo + ECWA Lafia DCC full title + name & role */}
+          <div style={{display:"flex",alignItems:"center",gap:10,flex:1,minWidth:0}}>
+            <img src={LOGO} alt="ECWA" style={{width:38,height:38,borderRadius:"50%",objectFit:"cover",border:"2px solid #c9a84c",flexShrink:0}}/>
             <div style={{minWidth:0}}>
-              <div style={{fontFamily:"Georgia,serif",color:"#fff",fontSize:12,fontWeight:700,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",maxWidth:100}}>ECWA Lafia</div>
-              <div style={{color:"#c9a84c",fontSize:9,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",maxWidth:100}}>{roleDisplay(user.role)}</div>
+              <div style={{fontFamily:"Georgia,serif",color:"#fff",fontSize:13,fontWeight:700,lineHeight:1.2,letterSpacing:0.2}}>ECWA Lafia DCC</div>
+              <div style={{color:"#c9a84c",fontSize:10,marginTop:2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
+                {user.name?.split(" ").slice(0,2).join(" ")} · {roleDisplay(user.role)}
+              </div>
             </div>
           </div>
-          {/* Right: actions */}
-          <div style={{display:"flex",alignItems:"center",gap:4,flexShrink:0}}>
+          {/* Right: actions — evenly spaced */}
+          <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0,marginLeft:10}}>
             <div style={{position:"relative"}}>
-              <button style={{background:"rgba(255,255,255,0.1)",border:"none",borderRadius:8,color:"#fff",padding:"5px 8px",cursor:"pointer",fontSize:14,display:"flex",alignItems:"center",gap:3}} onClick={()=>setNotifOpen(o=>!o)}>
-                🔔{unreadCount>0&&<span style={{background:"#c0392b",color:"#fff",borderRadius:8,padding:"0px 5px",fontSize:9,fontWeight:700}}>{unreadCount}</span>}
+              <button style={{background:"rgba(255,255,255,0.12)",border:"none",borderRadius:8,color:"#fff",padding:"7px 10px",cursor:"pointer",fontSize:16,display:"flex",alignItems:"center",gap:3,minWidth:38,justifyContent:"center"}} onClick={()=>setNotifOpen(o=>!o)}>
+                🔔{unreadCount>0&&<span style={{background:"#c0392b",color:"#fff",borderRadius:8,padding:"1px 5px",fontSize:9,fontWeight:700,marginLeft:1}}>{unreadCount}</span>}
               </button>
               {notifOpen&&<NotifPanel notifs={notifs} onRead={markRead} onClose={()=>setNotifOpen(false)}/>}
             </div>
-            <button style={{background:"rgba(255,255,255,0.1)",border:"none",borderRadius:8,color:"#fff",padding:"5px 8px",cursor:"pointer",fontSize:12}} onClick={()=>setIdCard(true)}>📋</button>
-            <button style={{background:"rgba(192,57,43,0.8)",border:"none",borderRadius:8,color:"#fff",padding:"5px 10px",cursor:"pointer",fontSize:11,fontWeight:600}} onClick={onLogout}>Exit</button>
+            <button style={{background:"rgba(255,255,255,0.12)",border:"none",borderRadius:8,color:"#fff",padding:"7px 10px",cursor:"pointer",fontSize:16,minWidth:38,textAlign:"center"}} onClick={()=>setIdCard(true)}>📋</button>
+            <button style={{background:"rgba(192,57,43,0.9)",border:"none",borderRadius:8,color:"#fff",padding:"7px 14px",cursor:"pointer",fontSize:12,fontWeight:700,letterSpacing:0.3}} onClick={onLogout}>Exit</button>
           </div>
         </div>
         {/* Bottom row: tabs scrollable */}
@@ -3277,7 +3381,7 @@ function Dashboard({ user, users, setUsers, requests, setRequests, leaves, setLe
       {mod&&(
         <div style={{padding:"16px 12px",maxWidth:1060,margin:"0 auto"}}>
           {tabs.length>1&&<div style={{marginBottom:14,display:"flex",alignItems:"center",gap:8}}><button onClick={()=>setMod(null)} style={{background:"none",border:"none",color:"#c9a84c",cursor:"pointer",fontSize:13,fontWeight:600,padding:0}}>← Modules</button><span style={{color:"#bbb",fontSize:13}}>/</span><span style={{fontSize:13,color:"#0b1f3a",fontWeight:600}}>{tabs.find(t=>t.id===mod)?.label}</span></div>}
-          {mod==="finance"&&<FinanceMod user={user} requests={requests} setRequests={setRequests} toast={toast}/>}
+          {mod==="finance"&&<FinanceMod user={user} users={users} requests={requests} setRequests={setRequests} toast={toast}/>}
           {mod==="leave"&&<LeaveMod user={user} users={users} leaves={leaves} setLeaves={setLeaves} toast={toast}/>}
           {mod==="sunday"&&<SundayMod user={user} users={users} sundayReports={sundayReports} setSundayReports={setSundayReports} toast={toast}/>}
           {mod==="attendance"&&<AttendanceMod user={user} users={users} attendance={attendance} setAttendance={setAttendance} leaves={leaves} toast={toast}/>}
