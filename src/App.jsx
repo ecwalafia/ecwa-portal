@@ -4209,20 +4209,16 @@ function MasterLCC({ lccs, setLccs, users, setUsers, toast, addLog }) {
 function MasterAnnounce({ announcements, setAnnouncements, users, banner, setBanner, toast, addLog }) {
   const [bannerText, setBannerText] = useState(banner?.text||"");
   const [bannerType, setBannerType] = useState(banner?.type||"info");
-  const [showBannerForm, setShowBannerForm] = useState(false);
 
-  const saveBanner = () => {
-    const b = bannerText.trim() ? { text:bannerText.trim(), type:bannerType, set:today() } : null;
+  const bannerOn = !!(banner?.active);
+
+  const toggleBanner = () => {
+    if(!bannerText.trim()){toast("Type a message first","danger");return;}
+    const newVal = !bannerOn;
+    const b = { text:bannerText.trim(), type:bannerType, active:newVal, set:today() };
     setBanner(b);
-    addLog("SET_BANNER", b?`Set portal banner: "${bannerText}"`:"Cleared portal banner");
-    toast(b?"✅ Emergency banner active — all users will see it on every device.":"✅ Banner cleared.");
-    setShowBannerForm(false);
-  };
-
-  const clearBanner = () => {
-    setBanner(null); setBannerText(""); setBannerType("info");
-    addLog("CLEAR_BANNER","Cleared portal banner");
-    toast("✅ Banner cleared.");
+    addLog("BANNER_TOGGLE", newVal?`Banner ON: "${bannerText}"`:"Banner OFF");
+    toast(newVal?"🚨 Banner is now ON — all users will see it.":"✅ Banner is now OFF.");
   };
 
   const deleteAnn = (id) => {
@@ -4235,31 +4231,28 @@ function MasterAnnounce({ announcements, setAnnouncements, users, banner, setBan
     <div>
       <div style={{fontFamily:"Georgia,serif",color:"#c9a84c",fontSize:20,marginBottom:16}}>📢 Announcements</div>
 
-      {/* Emergency Banner */}
-      <div style={{background:"rgba(192,57,43,0.1)",border:"1px solid rgba(192,57,43,0.3)",borderRadius:12,padding:16,marginBottom:24}}>
-        <div style={{color:"#e74c3c",fontWeight:700,marginBottom:8}}>🚨 Portal-Wide Emergency Banner</div>
-        <div style={{fontSize:12,color:"rgba(255,255,255,0.5)",marginBottom:12}}>Appears on every user's screen on every device. Saved to Supabase — works globally.</div>
-        {banner&&<div style={{background:"rgba(192,57,43,0.2)",borderRadius:8,padding:"8px 12px",fontSize:13,color:"#ff8a80",marginBottom:10}}>Current: "{banner.text}" (set {fdate(banner.set)})</div>}
-        {!showBannerForm&&(
-          <div style={{display:"flex",gap:8}}>
-            <button onClick={()=>setShowBannerForm(true)} style={{background:"rgba(192,57,43,0.2)",border:"1px solid rgba(192,57,43,0.4)",color:"#e74c3c",borderRadius:8,padding:"6px 14px",cursor:"pointer",fontSize:12}}>{banner?"✏️ Edit Banner":"+ Set Banner"}</button>
-            {banner&&<button onClick={clearBanner} style={{background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.15)",color:"rgba(255,255,255,0.6)",borderRadius:8,padding:"6px 14px",cursor:"pointer",fontSize:12}}>✕ Clear Banner</button>}
+      {/* Emergency Banner — simple toggle like maintenance */}
+      <div style={{background:"rgba(192,57,43,0.1)",border:"1px solid rgba(192,57,43,0.3)",borderRadius:12,padding:20,marginBottom:24}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}>
+          <div>
+            <div style={{color:"#e74c3c",fontWeight:700,fontSize:15}}>🚨 Emergency Banner</div>
+            <div style={{fontSize:12,color:"rgba(255,255,255,0.5)",marginTop:4}}>Appears on every user's screen on every device. Saved to Supabase.</div>
           </div>
-        )}
-        {showBannerForm&&(
-          <div style={{display:"flex",flexDirection:"column",gap:10}}>
-            <textarea value={bannerText} onChange={e=>setBannerText(e.target.value)} rows={2} style={{background:"#1a1a2e",color:"#fff",border:"1px solid rgba(255,255,255,0.2)",borderRadius:8,padding:"8px 12px",resize:"vertical",fontSize:13}} placeholder="e.g. Portal will be unavailable on Sunday 20th April for maintenance."/>
-            <select value={bannerType} onChange={e=>setBannerType(e.target.value)} style={{background:"#1a1a2e",color:"#fff",border:"1px solid rgba(255,255,255,0.2)",borderRadius:8,padding:"7px 10px",fontSize:12}}>
-              <option value="info">ℹ️ Info (blue)</option>
-              <option value="warning">⚠️ Warning (orange)</option>
-              <option value="danger">🚨 Danger (red)</option>
-            </select>
-            <div style={{display:"flex",gap:8}}>
-              <button onClick={()=>setShowBannerForm(false)} style={{background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.15)",color:"#fff",borderRadius:8,padding:"6px 14px",cursor:"pointer",fontSize:12}}>Cancel</button>
-              <button onClick={saveBanner} style={{background:"#c9a84c",border:"none",color:"#0b1f3a",borderRadius:8,padding:"6px 18px",cursor:"pointer",fontWeight:700,fontSize:12}}>Set Banner →</button>
-            </div>
+          <div onClick={toggleBanner} style={{width:52,height:28,background:bannerOn?"#e74c3c":"rgba(255,255,255,0.15)",borderRadius:14,cursor:"pointer",position:"relative",transition:"background 0.2s"}}>
+            <div style={{width:22,height:22,background:"#fff",borderRadius:"50%",position:"absolute",top:3,left:bannerOn?27:3,transition:"left 0.2s"}}/>
           </div>
-        )}
+        </div>
+        <div style={{fontSize:13,color:bannerOn?"#e74c3c":"rgba(255,255,255,0.4)",fontWeight:700,marginBottom:14}}>{bannerOn?"🔴 BANNER IS ON":"⚫ Banner is off"}</div>
+        <div style={{display:"flex",flexDirection:"column",gap:10}}>
+          <div><label style={{fontSize:12,color:"rgba(255,255,255,0.5)",display:"block",marginBottom:6}}>Banner Message</label>
+          <textarea value={bannerText} onChange={e=>setBannerText(e.target.value)} rows={2} style={{background:"#1a1a2e",color:"#fff",border:"1px solid rgba(255,255,255,0.2)",borderRadius:8,padding:"8px 12px",resize:"vertical",fontSize:13,width:"100%",boxSizing:"border-box"}} placeholder="e.g. Portal will be unavailable Sunday 20th April for maintenance."/></div>
+          <div><label style={{fontSize:12,color:"rgba(255,255,255,0.5)",display:"block",marginBottom:6}}>Type</label>
+          <select value={bannerType} onChange={e=>setBannerType(e.target.value)} style={{background:"#1a1a2e",color:"#fff",border:"1px solid rgba(255,255,255,0.2)",borderRadius:8,padding:"7px 10px",fontSize:12,width:"100%"}}>
+            <option value="info">ℹ️ Info (blue)</option>
+            <option value="warning">⚠️ Warning (orange)</option>
+            <option value="danger">🚨 Danger (red)</option>
+          </select></div>
+        </div>
       </div>
 
       {/* Announcements list */}
@@ -4617,9 +4610,9 @@ export default function App() {
           if (map.announcements) setAnnouncements(map.announcements);
           if (map.pwdReqs)       setPwdReqs(map.pwdReqs);
           if (map.lccs)          setLccs(map.lccs);
-          if (map.banner !== undefined)   setBanner(map.banner);
-          if (map.maintMode !== undefined){ setMaintMode(map.maintMode); }
-          if (map.maintMsg)   setMaintMsg(map.maintMsg);
+          if ("banner" in map)          setBanner(map.banner);
+          if ("maintMode" in map)        setMaintMode(map.maintMode);
+          if (map.maintMsg)              setMaintMsg(map.maintMsg);
         }
       } catch(e) { console.error("Load failed:", e); }
       setLoading(false);
@@ -4636,9 +4629,12 @@ export default function App() {
   useEffect(() => { if(!loading) sbSave("announcements", announcements); }, [announcements, loading]);
   useEffect(() => { if(!loading) sbSave("pwdReqs", pwdReqs); }, [pwdReqs, loading]);
   useEffect(() => { if(!loading) sbSave("lccs", lccs); }, [lccs, loading]);
-  useEffect(() => { if(!loading) sbSave("banner", banner); }, [banner, loading]);
-  useEffect(() => { if(!loading) sbSave("maintMode", maintMode); }, [maintMode, loading]);
-  useEffect(() => { if(!loading) sbSave("maintMsg", maintMsg); }, [maintMsg, loading]);
+  const [bannerReady,   setBannerReady]   = useState(false);
+  const [maintReady,    setMaintReady]    = useState(false);
+  useEffect(() => { if(!loading){ setBannerReady(true); setMaintReady(true); } }, [loading]);
+  useEffect(() => { if(bannerReady)  sbSave("banner",    banner);    }, [banner,    bannerReady]);
+  useEffect(() => { if(maintReady)   sbSave("maintMode", maintMode); }, [maintMode, maintReady]);
+  useEffect(() => { if(maintReady)   sbSave("maintMsg",  maintMsg);  }, [maintMsg,  maintReady]);
 
   // ── Loading screen ─────────────────────────────────────────────────────────
   if(loading) return(
@@ -4654,7 +4650,7 @@ export default function App() {
   if(me)return(
     <><GlobalStyles/>
     {/* Emergency banner — shown to all users */}
-    {banner&&!me.isMaster&&(
+    {banner?.active&&!me.isMaster&&(
       <div style={{background:banner.type==="danger"?"#c0392b":banner.type==="warning"?"#e67e22":"#2980b9",color:"#fff",padding:"10px 20px",textAlign:"center",fontSize:13,fontWeight:600,zIndex:9999,position:"relative"}}>
         {banner.type==="danger"?"🚨":banner.type==="warning"?"⚠️":"ℹ️"} {banner.text}
       </div>
