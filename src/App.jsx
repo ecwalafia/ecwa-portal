@@ -235,7 +235,7 @@ const OFFICE_ROLES = BUILTIN_OFFICE_ROLES;
 // Display names for appointed roles
 const APPT_ROLE_LABELS = {
   chairman:"Chairman", vice_chairman:"Vice Chairman",
-  secretary:"Secretary", ads:"ADS (Asst. DCC Secretary)", lo:"Lay Officer (LO)"
+  secretary:"Secretary", ads:"ADS (Asst. DCC Secretary)", lo:"Local Overseer (LO)"
 };
 
 // Number to words for finance forms — returns e.g. "Eighty Thousand Only"
@@ -2028,7 +2028,11 @@ https://ecwa-portal.onrender.com`}));
 }
 
 // ── Staff Profile & Documents ──────────────────────────────────────────────────
-function StaffProf({ staff, user, users, canEdit, canEditDetails, lccs, onClose, onUpdate, onTransfer }) {
+function StaffProf({ staff, user, users, canEdit, canEditDetails, lccs, onClose, onUpdate, onTransfer, onAddUser, onUpdateUser, onGetUsers }) {
+  // Fallbacks so it never crashes if called without these props
+  onAddUser   = onAddUser   || (()=>{});
+  onUpdateUser= onUpdateUser|| (()=>{});
+  onGetUsers  = onGetUsers  || (()=>[]);
   const isSelfEdit = staff.id===user.id && !canEditDetails;
   const fref=useRef(null); const photoRef=useRef(null); const [upl,setUpl]=useState(null);
   const [editing,setEditing]=useState(false); const [transferMode,setTransferMode]=useState(false);
@@ -2120,7 +2124,15 @@ function StaffProf({ staff, user, users, canEdit, canEditDetails, lccs, onClose,
                 {canTransfer&&!transferMode&&<button className="btn btn-outline" style={{padding:"6px 14px",fontSize:12,color:"#c9a84c",borderColor:"#c9a84c"}} onClick={()=>setTransferMode(true)}>🔄 Transfer</button>}
                 {canAppointLO&&!isAlreadyLO&&!lccAlreadyHasLO&&<button className="btn btn-outline" style={{padding:"6px 14px",fontSize:12,color:"#2980b9",borderColor:"#2980b9"}} onClick={()=>setLoMode(true)}>🏘️ Appoint as LO</button>}
                 {canAppointLO&&!isAlreadyLO&&lccAlreadyHasLO&&lccAlreadyHasLO.id!==staff.id&&<span style={{fontSize:10,color:"rgba(255,255,255,0.3)",padding:"6px 0"}}>LCC already has an LO</span>}
-                {canAppointLO&&isAlreadyLO&&<button className="btn btn-red" style={{padding:"6px 14px",fontSize:12}} onClick={()=>{if(window.confirm("Revoke LO appointment for "+staff.name+"?"))onUpdate(staff.id,{loAppointment:null});}}>Revoke LO</button>}
+                {canAppointLO&&isAlreadyLO&&<button className="btn btn-red" style={{padding:"6px 14px",fontSize:12}} onClick={()=>{
+                  if(window.confirm("Revoke LO appointment for "+staff.name+"? Their LO account will be suspended.")){
+                    // Suspend the separate LO account
+                    const loAcc = onGetUsers().find(u=>u.role==="lo"&&u.lcc_overseen===staff.lcc);
+                    if(loAcc) onUpdateUser(loAcc.id,{approved:false,suspendedOn:today(),suspendedBy:user.name});
+                    // Clear pastor's loAppointment reference
+                    onUpdate(staff.id,{loAppointment:null});
+                  }
+                }}>Revoke LO</button>}
               </div>
             </div>
           </div>
@@ -2154,10 +2166,35 @@ function StaffProf({ staff, user, users, canEdit, canEditDetails, lccs, onClose,
               <div className="info-box" style={{marginBottom:14}}>ℹ️ The pastor will use the LO email and this password to sign in. Their personal pastor account remains unchanged.</div>
               <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
                 <button className="btn btn-outline" onClick={()=>{setLoMode(false);setLoTempPw("");}}>Cancel</button>
-                <button className="btn btn-gold" disabled={!loTempPw||loTempPw.length<6} onClick={()=>{
-                  onUpdate(staff.id,{loAppointment:{lcc_overseen:staff.lcc,email:loGenEmail,password:loTempPw,active:true,appointedBy:user.name,appointedDate:today()}});
-                  setLoMode(false);setLoTempPw("");
-                  setTimeout(()=>alert(`✅ LO Appointment Complete!\n\nShare these credentials with ${staff.name}:\n\n📧 Email: ${loGenEmail}\n🔐 Password: ${loTempPw}\n\nThey use this to sign in as LO and approve pastor leave requests.`),100);
+                <button className="btn btn-gold" disabled={!loTempPw||loTempPw.length<6} onClick={async()=>{
+                  const hashed = await hashPassword(loTempPw);
+                  // Check if a suspended LO account already exists for this LCC — reactivate it
+                  const existingLO = onGetUsers().find(u=>u.role==="lo"&&u.lcc_overseen===staff.lcc);
+                  if(existingLO){
+                    // Reactivate and update existing LO account with new pastor's details
+                    onUpdateUser(existingLO.id,{
+                      name:staff.name, email:loGenEmail, password:hashed,
+                      approved:true, mustChangePassword:true,
+                      lcc_overseen:staff.lcc, lcc:staff.lcc, lc_ph:staff.lc_ph,
+                      rank:staff.rank, appointedPastorId:staff.id,
+                      appointedOn:today(), appointedBy:user.name,
+                    });
+                  } else {
+                    // Create brand new LO account
+                    onAddUser({
+                      id:"LO_"+Date.now(),
+                      name:staff.name, email:loGenEmail, password:hashed,
+                      role:"lo", category:"lo",
+                      lcc_overseen:staff.lcc, lcc:staff.lcc, lc_ph:staff.lc_ph,
+                      rank:staff.rank, approved:true, mustChangePassword:true,
+                      appointedPastorId:staff.id, appointedOn:today(), appointedBy:user.name,
+                      docs:{}, customDocSections:[],
+                    });
+                  }
+                  // Mark pastor record with loAppointment reference (no role change)
+                  onUpdate(staff.id,{loAppointment:{lcc_overseen:staff.lcc,email:loGenEmail,active:true,appointedBy:user.name,appointedDate:today()}});
+                  setLoMode(false); setLoTempPw("");
+                  setTimeout(()=>alert(`✅ LO Account Ready!\n\nShare these login details with ${staff.name}:\n\n📧 LO Email: ${loGenEmail}\n🔐 Temp Password: ${loTempPw}\n\nHis personal pastor account is untouched.\nHe must change this password on first login.`),100);
                 }}>Confirm Appointment →</button>
               </div>
             </div>
@@ -2428,6 +2465,9 @@ function PersonnelMod({ user, users, setUsers, lccs, toast }) {
   const canEditDetails=s=>["personnel","secretary","ads","master"].includes(user.role)||(["conf_secretary","master"].includes(user.role)&&s.id===user.id);
 
   const upd=(id,u2)=>{setUsers(us=>us.map(u=>u.id===id?{...u,...u2}:u));setSel(s=>s?{...s,...u2}:s);toast("✅ Profile updated.");};
+  const addUser  = u => setUsers(us=>[...us,u]);
+  const getUsers = () => { let r; setUsers(us=>{r=us;return us;}); return r||[]; };
+  const updateUser = (id,u2) => setUsers(us=>us.map(u=>u.id===id?{...u,...u2}:u));
   const transfer=(id,toLcc,toChurch,note)=>{
     setUsers(us=>us.map(u=>{
       if(u.id!==id)return u;
@@ -2448,7 +2488,7 @@ function PersonnelMod({ user, users, setUsers, lccs, toast }) {
         {myProfile&&user.dob&&user.doj&&<div style={{marginBottom:16}}><RetirementBadge dob={user.dob} doj={user.doj}/></div>}
         <button className="btn btn-gold" style={{width:"100%",padding:"12px"}} onClick={()=>setSel(myProfile)}>Open My Profile →</button>
       </div>
-      {sel&&<StaffProf staff={sel} user={user} users={users} canEdit={true} canEditDetails={false} lccs={lccs} onClose={()=>setSel(null)} onUpdate={upd} onTransfer={transfer}/>}
+      {sel&&<StaffProf staff={sel} user={user} users={users} canEdit={true} canEditDetails={false} lccs={lccs} onClose={()=>setSel(null)} onUpdate={upd} onTransfer={transfer} onAddUser={addUser} onUpdateUser={updateUser} onGetUsers={getUsers}/>}
     </div>
   );
 
@@ -2537,7 +2577,7 @@ function PersonnelMod({ user, users, setUsers, lccs, toast }) {
           <div style={{padding:48,textAlign:"center",color:"#bbb"}}><div style={{fontSize:36,marginBottom:10}}>🔍</div><div>No staff found</div></div>
         )}
       </div>
-      {sel&&<StaffProf staff={sel} user={user} users={users} canEdit={canEdit(sel)} canEditDetails={canEditDetails(sel)} lccs={lccs} onClose={()=>setSel(null)} onUpdate={upd} onTransfer={transfer}/>}
+      {sel&&<StaffProf staff={sel} user={user} users={users} canEdit={canEdit(sel)} canEditDetails={canEditDetails(sel)} lccs={lccs} onClose={()=>setSel(null)} onUpdate={upd} onTransfer={transfer} onAddUser={addUser} onUpdateUser={updateUser} onGetUsers={getUsers}/>}
     </div>
   );
 }
@@ -4082,7 +4122,7 @@ function MasterAppointments({ users, setUsers, toast, addLog }) {
     { role:"vice_chairman",label:"Vice Chairman",            icon:"🎖️", color:"#e67e22" },
     { role:"secretary",    label:"Secretary",                icon:"📋", color:"#2980b9" },
     { role:"ads",          label:"ADS",                      icon:"📌", color:"#8e44ad" },
-    { role:"lo",           label:"Lay Officer (LO)",         icon:"🤝", color:"#27ae60" },
+    { role:"lo",           label:"Local Overseer (LO)",      icon:"🏘️", color:"#27ae60" },
   ];
 
   // Current holders
