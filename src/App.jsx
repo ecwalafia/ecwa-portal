@@ -417,6 +417,7 @@ const getLOForLCC = (users, lcc) => users.find(u=>u.loAppointment?.active&&u.loA
 
 // Can approve leave at which stage
 const canActLeave = (user, leave, users=[]) => {
+  if(user.isMaster===true&&leave.status.startsWith("pending"))return leave.status.replace("pending_","");
   if(leave.status==="pending_dept"){
     if(leave.requester_role==="pastor"||leave.category==="pastor"){
       const lo = getLOForLCC(users, leave.lcc);
@@ -927,7 +928,9 @@ function FinanceMod({ user, users, requests, setRequests, toast, openRecordId, o
   const act=(id,action,sig,note)=>{
     setRequests(rs=>rs.map(r=>{
       if(r.id!==id)return r;
-      const actKey=["secretary","ads","conf_secretary"].includes(user.role)?"secretary":user.role==="accountant"?"finance":user.role;
+      const actKey=user.isMaster===true
+        ?({"pending_secretary":"secretary","pending_finance":"finance","pending_auditor":"auditor","pending_chairman":"chairman"}[r.status]||"chairman")
+        :["secretary","ads","conf_secretary"].includes(user.role)?"secretary":user.role==="accountant"?"finance":user.role;
       const s2={...r.signatures,[actKey]:sig},c2={...r.comments,[actKey]:note||""};
       if(action==="reject"){
         toast("Request rejected.","danger");
@@ -939,8 +942,8 @@ function FinanceMod({ user, users, requests, setRequests, toast, openRecordId, o
         });
         return{...r,status:"rejected",signatures:s2,comments:c2};
       }
-      // Only chairman/vice_chairman can fully approve — everyone else goes to next stage
-      if(["chairman","vice_chairman"].includes(user.role)){
+      // Only chairman/vice_chairman/master can fully approve — everyone else goes to next stage
+      if(["chairman","vice_chairman"].includes(user.role)||user.isMaster===true){
         toast("🎉 Fully approved!");
         sendGenericEmail({
           to_name: r.requester,
@@ -1972,6 +1975,7 @@ function StaffProf({ staff, user, users, canEdit, canEditDetails, lccs, onClose,
   const [addSection,setAddSection]=useState(false); const [newSecLabel,setNewSecLabel]=useState("");
   const [lightbox,setLightbox]=useState(null);
   const [loMode,setLoMode]=useState(false); const [loTempPw,setLoTempPw]=useState(""); // {src, name}
+  const [masterResetPw,setMasterResetPw]=useState(""); const [showMasterReset,setShowMasterReset]=useState(false); const [masterResetDone,setMasterResetDone]=useState(false);
   const [form,setForm]=useState({
     name:staff.name,phone:staff.phone||"",email:staff.email,
     dob:staff.dob||"",doj:staff.doj||"",
@@ -2215,6 +2219,33 @@ function StaffProf({ staff, user, users, canEdit, canEditDetails, lccs, onClose,
             </div>
           )}
 
+          {/* Master Admin — Direct Password Reset */}
+          {user.isMaster===true&&staff.id!==0&&(
+            <div style={{marginBottom:20,background:"#fff8e8",border:"1px solid #c9a84c",borderRadius:10,padding:"14px 16px"}}>
+              <div style={{fontSize:12,fontWeight:700,color:"#9A6F00",textTransform:"uppercase",letterSpacing:0.5,marginBottom:10}}>🔐 Master Admin — Reset Password</div>
+              {!showMasterReset&&!masterResetDone&&(
+                <button className="btn btn-gold btn-sm" onClick={()=>setShowMasterReset(true)}>Reset Password for {staff.name}</button>
+              )}
+              {showMasterReset&&!masterResetDone&&(
+                <div style={{display:"flex",flexDirection:"column",gap:10}}>
+                  <div><label style={{fontSize:12}}>New Temporary Password (min 6 chars)</label><input type="text" placeholder="e.g. NewPass2026" value={masterResetPw} onChange={e=>setMasterResetPw(e.target.value)} style={{color:"#333",background:"#fff"}}/></div>
+                  <div style={{display:"flex",gap:8}}>
+                    <button className="btn btn-outline btn-sm" onClick={()=>{setShowMasterReset(false);setMasterResetPw("");}}>Cancel</button>
+                    <button className="btn btn-gold btn-sm" onClick={async()=>{
+                      if(!masterResetPw||masterResetPw.length<6){alert("Password must be at least 6 characters.");return;}
+                      const h=await hashPassword(masterResetPw);
+                      onUpdate(staff.id,{password:h,mustChangePassword:true});
+                      setShowMasterReset(false);setMasterResetPw("");setMasterResetDone(true);
+                    }}>✅ Set Password</button>
+                  </div>
+                </div>
+              )}
+              {masterResetDone&&(
+                <div style={{fontSize:12,color:"#27ae60",fontWeight:600}}>✅ Password reset. Staff will be prompted to change it on next login. <button className="link-btn" style={{fontSize:11}} onClick={()=>setMasterResetDone(false)}>Reset again</button></div>
+              )}
+            </div>
+          )}
+
           {/* Transfer History — pastors only */}
           {staff.category==="pastor"&&(
             <div style={{marginBottom:20}}>
@@ -2325,8 +2356,8 @@ function DocFileList({ files, canEdit, onDl, onDel, onPick, label }) {
 function PersonnelMod({ user, users, setUsers, lccs, toast }) {
   const isLO = user.role==="lo";
   // Only these roles get the full staff directory — everyone else sees only their own profile
-  const ADMIN_ROLES = ["personnel","secretary","ads","chairman","vice_chairman"];
-  const isAdmin = ADMIN_ROLES.includes(user.role);
+  const ADMIN_ROLES = ["personnel","secretary","ads","chairman","vice_chairman","master","conf_secretary"];
+  const isAdmin = ADMIN_ROLES.includes(user.role)||user.isMaster===true;
   const isStaffOnly = !isAdmin && !isLO;
 
   const [q,setQ]=useState(""); const [rf,setRf]=useState("all"); const [sel,setSel]=useState(null);
@@ -2376,7 +2407,7 @@ function PersonnelMod({ user, users, setUsers, lccs, toast }) {
   return(
     <div>
       {/* Pending approvals banner — only for admins */}
-      {isAdmin && pendingAccounts.length>0&&(
+      {(isAdmin||user.isMaster) && pendingAccounts.length>0&&(
         <div className="card" style={{marginBottom:18,padding:"16px 20px",borderLeft:"4px solid #e67e22"}}>
           <div style={{fontFamily:"Georgia,serif",fontSize:15,fontWeight:700,color:"#0b1f3a",marginBottom:12}}>⏳ Pending Account Approvals ({pendingAccounts.length})</div>
           <div style={{display:"flex",flexDirection:"column",gap:8}}>
@@ -3437,7 +3468,7 @@ function Dashboard({ user, users, setUsers, requests, setRequests, leaves, setLe
   const canS = isPastor||isLO||["secretary","ads","conf_secretary","chairman","accountant","master"].includes(user.role)||isMaster;
   const canAtt = isOffice||isMaster;
   const canAnn = true;
-  const canPwdMgr = ["secretary","ads","conf_secretary","personnel","master"].includes(user.role);
+  const canPwdMgr = ["secretary","ads","conf_secretary","personnel","master"].includes(user.role)||user.isMaster===true;
 
   const pf = canF?requests.filter(r=>{
     if(isMaster) return r.status!=="approved"&&r.status!=="rejected";
