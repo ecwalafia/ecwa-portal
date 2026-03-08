@@ -801,7 +801,7 @@ function FinancePrintForm({ req, onClose }) {
               <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
                 <thead>
                   <tr style={{background:"#f8f6f0"}}>
-                    {["#","Description","Unit Cost","Qty","Total"].map(h=><th key={h} style={{padding:"6px 8px",textAlign:"left",fontWeight:700,color:"#555",borderBottom:"2px solid #e8e4dc"}}>{h}</th>)}
+                    {[["#","left"],["Description","left"],["Unit Cost","left"],["Qty","center"],["Total","right"]].map(([h,a])=><th key={h} style={{padding:"6px 8px",textAlign:a,fontWeight:700,color:"#555",borderBottom:"2px solid #e8e4dc"}}>{h}</th>)}
                   </tr>
                 </thead>
                 <tbody>
@@ -809,11 +809,11 @@ function FinancePrintForm({ req, onClose }) {
                     const t=(parseFloat(item.unitCost)||0)*(parseFloat(item.qty)||0);
                     return(
                       <tr key={i} style={{borderBottom:"1px solid #f0ede8"}}>
-                        <td style={{padding:"6px 8px",color:"#888"}}>{i+1}</td>
-                        <td style={{padding:"6px 8px",fontWeight:500}}>{item.desc}</td>
-                        <td style={{padding:"6px 8px"}}>{money(parseFloat(item.unitCost)||0)}</td>
+                        <td style={{padding:"6px 8px",color:"#888",textAlign:"left"}}>{i+1}</td>
+                        <td style={{padding:"6px 8px",fontWeight:500,textAlign:"left"}}>{item.desc}</td>
+                        <td style={{padding:"6px 8px",textAlign:"left"}}>{money(parseFloat(item.unitCost)||0)}</td>
                         <td style={{padding:"6px 8px",textAlign:"center"}}>{item.qty}</td>
-                        <td style={{padding:"6px 8px",fontWeight:700}}>{money(t)}</td>
+                        <td style={{padding:"6px 8px",fontWeight:700,textAlign:"right"}}>{money(t)}</td>
                       </tr>
                     );
                   })}
@@ -1005,7 +1005,7 @@ function FinanceMod({ user, users, requests, setRequests, toast, openRecordId, o
                 <div><div style={{fontSize:13,fontWeight:700,color:"#fff"}}>{user.name}</div><div style={{fontSize:11,color:"#c9a84c"}}>{roleDisplay(user.role)} · {user.email}</div></div>
               </div>
               <div><label>Date of Request *</label><input type="date" value={reqDate} onChange={e=>setReqDate(e.target.value)}/></div>
-              <div><label>General Note / Purpose (optional)</label><input placeholder="e.g. Office supplies for Q1 2026" value={reqNote} onChange={e=>setReqNote(e.target.value)}/></div>
+              <div><label>General Note / Purpose (optional)</label><input placeholder="e.g. Office supplies for Q1 2026" value={reqNote} onChange={e=>setReqNote(e.target.value)} style={{color:"#333",background:"#fff"}}/></div>
 
               {/* Items table */}
               <div>
@@ -1013,27 +1013,38 @@ function FinanceMod({ user, users, requests, setRequests, toast, openRecordId, o
                   <label style={{margin:0}}>Request Items *</label>
                   <button className="btn btn-outline btn-sm" onClick={addItem}>+ Add Item</button>
                 </div>
-                {/* Header */}
-                <div style={{display:"grid",gridTemplateColumns:"1fr 110px 70px 90px 28px",gap:6,marginBottom:4}}>
-                  {["Description","Unit Cost (₦)","Qty","Total",""].map(h=>(
-                    <div key={h} style={{fontSize:10,fontWeight:700,color:"#aaa",textTransform:"uppercase",letterSpacing:0.5,padding:"0 2px"}}>{h}</div>
-                  ))}
-                </div>
                 {items.map((item,idx)=>(
-                  <div key={item.id} style={{display:"grid",gridTemplateColumns:"1fr 110px 70px 90px 28px",gap:6,marginBottom:6,alignItems:"center"}}>
-                    <input placeholder={`Item ${idx+1} description`} value={item.desc} onChange={e=>updateItem(item.id,"desc",e.target.value)} style={{fontSize:12,padding:"6px 8px"}}/>
-                    <div style={{position:"relative"}}>
-                      <span style={{position:"absolute",left:6,top:"50%",transform:"translateY(-50%)",fontSize:11,color:"#aaa",pointerEvents:"none"}}>₦</span>
-                      <input type="text" inputMode="decimal" placeholder="0.00" style={{paddingLeft:18,fontSize:12,padding:"6px 6px 6px 18px"}}
-                        value={item.unitCost}
-                        onChange={e=>updateItem(item.id,"unitCost",e.target.value.replace(/[^0-9.]/g,""))}
-                        onBlur={e=>{const v=parseFloat(e.target.value);if(!isNaN(v))updateItem(item.id,"unitCost",v.toFixed(2));}}/>
+                  <div key={item.id} style={{background:"#f8f6f0",borderRadius:8,padding:"10px 12px",marginBottom:10,border:"1px solid #e8e4dc"}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+                      <span style={{fontSize:11,fontWeight:700,color:"#aaa",textTransform:"uppercase"}}>Item {idx+1}</span>
+                      {items.length>1&&<button onClick={()=>removeItem(item.id)} style={{background:"none",border:"none",color:"#e74c3c",fontSize:18,cursor:"pointer",padding:0,lineHeight:1}}>×</button>}
                     </div>
-                    <input type="number" min="1" placeholder="1" value={item.qty} onChange={e=>updateItem(item.id,"qty",e.target.value)} style={{fontSize:12,padding:"6px 8px",textAlign:"center"}}/>
-                    <div style={{fontSize:12,fontWeight:700,color:"#0b1f3a",padding:"6px 4px",background:"#f8f6f0",borderRadius:6,textAlign:"right"}}>{itemTotal(item)>0?money(itemTotal(item)):"—"}</div>
-                    {items.length>1
-                      ?<button onClick={()=>removeItem(item.id)} style={{background:"none",border:"none",color:"#e74c3c",fontSize:16,cursor:"pointer",padding:0,lineHeight:1}}>×</button>
-                      :<div/>}
+                    <div style={{marginBottom:8}}>
+                      <label style={{fontSize:11,color:"#777"}}>Description</label>
+                      <textarea placeholder="e.g. Laptop charger" value={item.desc} onChange={e=>updateItem(item.id,"desc",e.target.value)} rows={2} style={{fontSize:13,padding:"7px 10px",color:"#333",background:"#fff",resize:"vertical",width:"100%",boxSizing:"border-box"}}/>
+                    </div>
+                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+                      <div>
+                        <label style={{fontSize:11,color:"#777"}}>Unit Cost (₦)</label>
+                        <div style={{position:"relative"}}>
+                          <span style={{position:"absolute",left:8,top:"50%",transform:"translateY(-50%)",fontSize:12,color:"#aaa",pointerEvents:"none"}}>₦</span>
+                          <input type="text" inputMode="decimal" placeholder="0.00"
+                            value={item.unitCost}
+                            onChange={e=>updateItem(item.id,"unitCost",e.target.value.replace(/[^0-9.]/g,""))}
+                            onBlur={e=>{const v=parseFloat(e.target.value);if(!isNaN(v))updateItem(item.id,"unitCost",v.toFixed(2));}}
+                            style={{width:"100%",fontSize:13,padding:"7px 8px 7px 22px",boxSizing:"border-box",color:"#333",background:"#fff"}}/>
+                        </div>
+                      </div>
+                      <div>
+                        <label style={{fontSize:11,color:"#777"}}>Quantity</label>
+                        <input type="number" min="1" placeholder="1" value={item.qty} onChange={e=>updateItem(item.id,"qty",e.target.value)} style={{fontSize:13,padding:"7px 10px",textAlign:"center",color:"#333",background:"#fff",width:"100%",boxSizing:"border-box"}}/>
+                      </div>
+                    </div>
+                    {itemTotal(item)>0&&(
+                      <div style={{marginTop:8,textAlign:"right",fontSize:13,fontWeight:700,color:"#0b1f3a"}}>
+                        Total: {money(itemTotal(item))}
+                      </div>
+                    )}
                   </div>
                 ))}
                 {/* Grand total */}
@@ -1758,7 +1769,7 @@ function SundayReportDetail({ report, user, users, setSundayReports, toast, onCl
   const [editCols,setEditCols]=useState({...report.collections});
   const [editAtt,setEditAtt]=useState({...report.attendance});
   const totalAtt=(report.attendance.men||0)+(report.attendance.women||0)+(report.attendance.children||0);
-  const isAdmin=["secretary","ads","conf_secretary","chairman","accountant"].includes(user.role);
+  const isAdmin=["secretary","ads","conf_secretary"].includes(user.role);
   const isPastor=user.role==="pastor";
 
   const saveEdit=()=>{
@@ -1767,7 +1778,7 @@ function SundayReportDetail({ report, user, users, setSundayReports, toast, onCl
       attendance:editAtt,
       totalGross:Object.values(editCols).reduce((s,v)=>s+(parseFloat(v)||0),0)+(report.optionalItems||[]).reduce((s,i)=>s+(parseFloat(i.amount)||0),0),
       submitted:true,
-      appeal:r.appeal?{...r.appeal,status:"resolved",resolvedBy:user.name,resolvedDate:new Date().toISOString().slice(0,10)}:null
+      appeal:r.appeal?{...r.appeal,status:"resolved",resolvedBy:user.name,resolvedDate:new Date().toISOString().slice(0,10)}:r.appeal
     }:r));
     if(isPastor){
       const admins=users.filter(u=>["secretary","ads","conf_secretary"].includes(u.role));
@@ -2987,8 +2998,8 @@ function AttRecordDetail({ record, user, canRespond, onClose, onAck, onComment }
                 </div>
               ))}
 
-              {/* Acknowledgements */}
-              {canRespond&&(
+              {/* Acknowledgements — visible to owner AND supervisors */}
+              {(canRespond||record.userEmail===user.email)&&(
                 <div style={{marginTop:14}}>
                   <div style={{fontSize:11,fontWeight:700,color:"#5a5a7a",textTransform:"uppercase",letterSpacing:0.5,marginBottom:8}}>👁 Acknowledgements</div>
                   {(record.acks||[]).length===0&&<div style={{fontSize:12,color:"#bbb",marginBottom:8}}>No acknowledgements yet.</div>}
@@ -2998,7 +3009,7 @@ function AttRecordDetail({ record, user, canRespond, onClose, onAck, onComment }
                       <span style={{fontSize:10,color:"#aaa"}}>{a.role} · {fdate(a.date)}</span>
                     </div>
                   ))}
-                  {!alreadyAcked&&(
+                  {canRespond&&!alreadyAcked&&(
                     <button className="btn btn-outline btn-sm" style={{color:"#27ae60",borderColor:"#27ae60",marginTop:4}} onClick={()=>onAck(record.id,{name:user.name,role:roleDisplay(user.role),email:user.email,date:today()})}>
                       ✅ Acknowledge Report
                     </button>
@@ -3006,10 +3017,10 @@ function AttRecordDetail({ record, user, canRespond, onClose, onAck, onComment }
                 </div>
               )}
 
-              {/* Comments */}
-              {canRespond&&(
+              {/* Comments — visible to owner AND supervisors, only supervisors can add */}
+              {(canRespond||record.userEmail===user.email)&&(
                 <div style={{marginTop:14}}>
-                  <div style={{fontSize:11,fontWeight:700,color:"#5a5a7a",textTransform:"uppercase",letterSpacing:0.5,marginBottom:8}}>💬 Comments</div>
+                  <div style={{fontSize:11,fontWeight:700,color:"#5a5a7a",textTransform:"uppercase",letterSpacing:0.5,marginBottom:8}}>💬 Comments from Supervisors</div>
                   {(record.comments||[]).length===0&&<div style={{fontSize:12,color:"#bbb",marginBottom:8}}>No comments yet.</div>}
                   {(record.comments||[]).map((c,i)=>(
                     <div key={i} style={{background:"#f0f9ff",border:"1px solid #aed6f1",borderRadius:8,padding:"8px 12px",marginBottom:8}}>
@@ -3017,10 +3028,10 @@ function AttRecordDetail({ record, user, canRespond, onClose, onAck, onComment }
                       <div style={{fontSize:13,color:"#333",marginTop:3}}>{c.text}</div>
                     </div>
                   ))}
-                  {!showCommentBox&&(
+                  {canRespond&&!showCommentBox&&(
                     <button className="btn btn-outline btn-sm" onClick={()=>setShowCommentBox(true)}>💬 {myComment?"Add Another Comment":"Add Comment"}</button>
                   )}
-                  {showCommentBox&&(
+                  {canRespond&&showCommentBox&&(
                     <div style={{marginTop:8}}>
                       <textarea rows={2} value={commentText} onChange={e=>setCommentText(e.target.value)} placeholder="Write your comment..." style={{resize:"vertical",marginBottom:8}}/>
                       <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
