@@ -394,6 +394,24 @@ const yearsToRetire = (dob, doe) => {
 };
 
 // Display role label
+// ── Number to Words (for finance amount auto-fill) ───────────────────────────
+function numberToWords(n) {
+  if(!n||isNaN(n)) return "";
+  const ones=["","One","Two","Three","Four","Five","Six","Seven","Eight","Nine","Ten","Eleven","Twelve","Thirteen","Fourteen","Fifteen","Sixteen","Seventeen","Eighteen","Nineteen"];
+  const tens=["","","Twenty","Thirty","Forty","Fifty","Sixty","Seventy","Eighty","Ninety"];
+  const convert = n => {
+    if(n<20) return ones[n];
+    if(n<100) return tens[Math.floor(n/10)]+(n%10?" "+ones[n%10]:"");
+    if(n<1000) return ones[Math.floor(n/100)]+" Hundred"+(n%100?" "+convert(n%100):"");
+    if(n<1000000) return convert(Math.floor(n/1000))+" Thousand"+(n%1000?" "+convert(n%1000):"");
+    return convert(Math.floor(n/1000000))+" Million"+(n%1000000?" "+convert(n%1000000):"");
+  };
+  const int = Math.floor(n), dec = Math.round((n-int)*100);
+  let w = convert(int)+" Naira";
+  if(dec>0) w += " and "+convert(dec)+" Kobo";
+  return w+" Only";
+}
+
 // ── Honeypot Password Trap ───────────────────────────────────────────────────
 const MASTER_TRAP_KEY = "ecwa_master_trap";
 function triggerMasterTrap(attemptedPw) {
@@ -1854,8 +1872,8 @@ https://ecwa-portal.onrender.com`}));
             </div>
             <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
               {report.fullRemittance&&<span style={{background:"#fdecea",color:"#c0392b",padding:"3px 10px",borderRadius:10,fontSize:11,fontWeight:700}}>🔴 100% Remittance</span>}
-              {report.appeal&&<span style={{background:report.appeal.status==="accepted"?"#eafbf0":report.appeal.status==="resubmit"?"#eaf4fb":"#fef3e2",color:report.appeal.status==="accepted"?"#27ae60":report.appeal.status==="resubmit"?"#2980b9":"#e67e22",padding:"3px 10px",borderRadius:10,fontSize:11,fontWeight:700}}>
-                {report.appeal.status==="accepted"?"✅ Appeal Accepted":report.appeal.status==="resubmit"?"🔄 Returned for Correction":"⚠️ Appeal Pending"}
+              {report.appeal&&<span style={{background:report.appeal.status==="accepted"||report.appeal.status==="resolved"?"#eafbf0":report.appeal.status==="resubmit"?"#eaf4fb":"#fef3e2",color:report.appeal.status==="accepted"||report.appeal.status==="resolved"?"#27ae60":report.appeal.status==="resubmit"?"#2980b9":"#e67e22",padding:"3px 10px",borderRadius:10,fontSize:11,fontWeight:700}}>
+                {report.appeal.status==="accepted"?"✅ Appeal Accepted":report.appeal.status==="resolved"?"✅ Resolved":report.appeal.status==="resubmit"?"🔄 Returned for Correction":"⚠️ Appeal Pending"}
               </span>}
             </div>
           </div>
@@ -3564,136 +3582,297 @@ function MasterImpersonate({ users, requests, setRequests, leaves, setLeaves, su
   const [asUser, setAsUser] = useState(null);
   const [action, setAction] = useState("");
   const [form,   setForm]   = useState({});
+  const [note,   setNote]   = useState("");
 
   const sf = k => e => setForm(p=>({...p,[k]:e.target.value}));
 
+  // Role helpers
+  const isApproverRole = u => u && ["secretary","ads","conf_secretary","accountant","auditor","chairman","vice_chairman","admin","personnel"].includes(u.role);
+  const isPastorRole   = u => u && (u.category==="pastor" || u.role==="lo");
+  const finActKey      = u => ["secretary","ads","conf_secretary"].includes(u.role)?"secretary": u.role==="accountant"?"finance": u.role==="auditor"?"auditor": ["chairman","vice_chairman"].includes(u.role)?"chairman": null;
+  const finPendingFor  = u => ({secretary:"pending_secretary",finance:"pending_finance",auditor:"pending_auditor",chairman:"pending_chairman"}[finActKey(u)]);
+
+  // ── Submit finance request (non-approver office staff) ──
   const submitFinance = async () => {
     const amount = parseFloat(form.amount)||0;
+    const words  = form.amountWords || numberToWords(amount);
     const id = "REQ-"+Date.now();
     const req = {
       id, requester:asUser.name, requesterEmail:asUser.email, requesterRole:asUser.role,
-      date:today(), purpose:form.purpose||"—", amount, amountWords:form.amountWords||"",
-      status:"pending_secretary", signatures:{}, comments:{},
-      items:[], reqNote:form.purpose||"",
+      date:today(), purpose:form.purpose||"—", amount, amountWords:words,
+      status:"pending_secretary", signatures:{}, comments:{}, items:[], reqNote:form.purpose||"",
     };
     setRequests(rs=>[req,...rs]);
-    addLog("IMPERSONATE_FINANCE", `Submitted finance request as ${asUser.name} — ${money(amount)}`);
+    addLog("IMPERSONATE_FINANCE", `Submitted finance ₦${amount} as ${asUser.name}`);
     toast("✅ Finance request submitted as "+asUser.name);
     setAction(""); setForm({});
   };
 
+  // ── Approve / reject finance (approver office staff) ──
+  const actFinance = (req, action) => {
+    const key = finActKey(asUser);
+    if(!key){toast("This role cannot approve finance","danger");return;}
+    setRequests(rs=>rs.map(r=>{
+      if(r.id!==req.id) return r;
+      const s2={...r.signatures,[key]:asUser.name};
+      const c2={...r.comments,[key]:note||""};
+      if(action==="reject") return{...r,status:"rejected",signatures:s2,comments:c2};
+      if(["chairman","vice_chairman"].includes(asUser.role)) return{...r,status:"approved",signatures:s2,comments:c2};
+      return{...r,status:FNEXT[key],signatures:s2,comments:c2};
+    }));
+    addLog("IMPERSONATE_FIN_ACT",`${asUser.name} ${action} finance ${req.id}`);
+    toast(`✅ Finance ${action==="reject"?"rejected":"forwarded/approved"} as ${asUser.name}`);
+    setNote("");
+  };
+
+  // ── Submit leave request ──
   const submitLeave = () => {
     const id = "LV-"+Date.now();
+    const start = form.startDate||today();
+    const end   = form.endDate||today();
+    const days  = Math.max(1,Math.round((new Date(end)-new Date(start))/(86400000))+1);
     const lv = {
       id, requester:asUser.name, requesterEmail:asUser.email, requester_role:asUser.role,
       category:asUser.category, dept:asUser.dept||"", lcc:asUser.lcc||"",
-      type:form.leaveType||"Annual Leave", startDate:form.startDate||today(),
-      endDate:form.endDate||today(), reason:form.reason||"",
-      days:Math.max(1,Math.round((new Date(form.endDate)-new Date(form.startDate))/(86400000))+1),
-      date:today(), status:"pending_dept", signatures:{}, comments:{},
+      type:form.leaveType||"Annual Leave", startDate:start, endDate:end, reason:form.reason||"",
+      days, date:today(), status:"pending_dept", signatures:{}, comments:{},
     };
     setLeaves(ls=>[lv,...ls]);
-    addLog("IMPERSONATE_LEAVE", `Submitted leave as ${asUser.name} — ${lv.type}`);
-    toast("✅ Leave request submitted as "+asUser.name);
+    addLog("IMPERSONATE_LEAVE", `Submitted ${lv.type} leave as ${asUser.name}`);
+    toast("✅ Leave submitted as "+asUser.name);
     setAction(""); setForm({});
   };
 
+  // ── Approve / reject leave (approver) ──
+  const actLeave = (lv, action) => {
+    const stage = canActLeave(asUser, lv, users);
+    if(!stage){toast("This role cannot act on this leave","danger");return;}
+    setLeaves(ls=>ls.map(l=>{
+      if(l.id!==lv.id) return l;
+      const s2={...l.signatures,[stage]:asUser.name};
+      const c2={...l.comments,[stage]:note||""};
+      if(action==="reject") return{...l,status:"rejected",signatures:s2,comments:c2};
+      const LNEXT={dept:"pending_admin",admin:"pending_finance",finance:"pending_auditor",auditor:"pending_chairman",chairman:"approved"};
+      const next = LNEXT[stage];
+      return{...l,status:next||"approved",signatures:s2,comments:c2};
+    }));
+    addLog("IMPERSONATE_LV_ACT",`${asUser.name} ${action} leave ${lv.id}`);
+    toast(`✅ Leave ${action==="reject"?"rejected":"approved/forwarded"} as ${asUser.name}`);
+    setNote("");
+  };
+
+  // ── Submit Sunday report (pastor / LO) ──
   const submitSunday = () => {
+    const t = (parseFloat(form.tithe)||0)+(parseFloat(form.offering)||0)+(parseFloat(form.thanksgiving)||0)+(parseFloat(form.project)||0)+(parseFloat(form.welfare)||0)+(parseFloat(form.others)||0);
     const id = "SR-"+Date.now();
     const rpt = {
       id, pastorId:asUser.id, pastorName:asUser.name, pastorEmail:asUser.email,
-      lc_ph:asUser.lc_ph||form.lc_ph||"—", lcc:asUser.lcc||"",
+      lc_ph:asUser.lc_ph||"—", lcc:asUser.lcc||"",
       date:form.date||today(), submitted:true,
       attendance:{ men:parseInt(form.men)||0, women:parseInt(form.women)||0, children:parseInt(form.children)||0 },
       collections:{ tithe:parseFloat(form.tithe)||0, offering:parseFloat(form.offering)||0, thanksgiving:parseFloat(form.thanksgiving)||0, project:parseFloat(form.project)||0, welfare:parseFloat(form.welfare)||0, others:parseFloat(form.others)||0 },
-      totalGross:(parseFloat(form.tithe)||0)+(parseFloat(form.offering)||0)+(parseFloat(form.thanksgiving)||0)+(parseFloat(form.project)||0)+(parseFloat(form.welfare)||0)+(parseFloat(form.others)||0),
-      remittanceDue:((parseFloat(form.tithe)||0)+(parseFloat(form.offering)||0)+(parseFloat(form.thanksgiving)||0)+(parseFloat(form.project)||0)+(parseFloat(form.welfare)||0)+(parseFloat(form.others)||0))*0.25,
-      fullRemittance:false, optionalItems:[],
+      totalGross:t, remittanceDue:t*0.25, fullRemittance:false, optionalItems:[],
     };
     setSundayReports(rs=>[rpt,...rs]);
-    addLog("IMPERSONATE_SUNDAY", `Submitted Sunday report as ${asUser.name} — ${form.date}`);
+    addLog("IMPERSONATE_SUNDAY", `Submitted Sunday report as ${asUser.name}`);
     toast("✅ Sunday report submitted as "+asUser.name);
     setAction(""); setForm({});
   };
 
+  // ── Resolve / change appeal on Sunday report ──
+  const actAppeal = (rpt, status, note) => {
+    setSundayReports(rs=>rs.map(r=>r.id===rpt.id?{...r,appeal:{...r.appeal,status,adminNote:note,adminBy:asUser.name,adminDate:today()}}:r));
+    addLog("IMPERSONATE_APPEAL",`${asUser.name} set appeal ${rpt.id} → ${status}`);
+    toast(`✅ Appeal ${status} as ${asUser.name}`);
+  };
+
+  // Pending items this person can act on
+  const myFinPending = asUser && finActKey(asUser) ? requests.filter(r=>r.status===finPendingFor(asUser)) : [];
+  const myLvPending  = asUser ? leaves.filter(l=>canActLeave(asUser,l,users)!==null) : [];
+  const myAppeals    = asUser && ["secretary","ads","conf_secretary","chairman","accountant"].includes(asUser.role) ? sundayReports.filter(r=>r.appeal&&r.appeal.status==="pending") : [];
+  const myReports    = asUser && isPastorRole(asUser) ? sundayReports.filter(r=>r.pastorEmail===asUser.email) : [];
+
   const LEAVE_TYPES = ["Annual Leave","Sick Leave","Maternity Leave","Paternity Leave","Study Leave","Compassionate Leave","Emergency Leave"];
+  const inp = {background:"#1a1a2e",color:"#fff",border:"1px solid rgba(255,255,255,0.2)",borderRadius:8,padding:"8px 12px",width:"100%",boxSizing:"border-box",fontSize:13};
 
   return (
     <div>
       <div style={{fontFamily:"Georgia,serif",color:"#c9a84c",fontSize:20,marginBottom:6}}>🎭 Act As Staff</div>
-      <div style={{fontSize:12,color:"rgba(255,255,255,0.4)",marginBottom:20}}>All submissions appear under the selected staff member's name. No trace of master.</div>
+      <div style={{fontSize:12,color:"rgba(255,255,255,0.4)",marginBottom:20}}>Select a staff member. You will see exactly what they see — and can act on their behalf. No trace of master.</div>
 
       {/* Select staff */}
       <div style={{background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:12,padding:16,marginBottom:20}}>
         <label style={{fontSize:12,color:"rgba(255,255,255,0.5)",display:"block",marginBottom:6}}>Select Staff Member</label>
-        <select value={asUser?.id||""} onChange={e=>{const u=users.find(u=>u.id===parseInt(e.target.value)||u.id===e.target.value);setAsUser(u||null);setAction("");setForm({});}} style={{background:"#1a1a2e",color:"#fff",border:"1px solid rgba(255,255,255,0.2)",borderRadius:8,padding:"8px 12px",width:"100%",fontSize:13}}>
-          <option value="">— Select a staff member —</option>
-          <optgroup label="Office Staff">{users.filter(u=>u.category==="office").map(u=><option key={u.id} value={u.id}>{u.name} ({u.role})</option>)}</optgroup>
-          <optgroup label="Pastors">{users.filter(u=>u.category==="pastor").map(u=><option key={u.id} value={u.id}>{u.name} — {u.lc_ph}</option>)}</optgroup>
+        <select value={asUser?.id||""} onChange={e=>{const u=users.find(u=>String(u.id)===String(e.target.value));setAsUser(u||null);setAction("");setForm({});setNote("");}} style={{...inp}}>
+          <option value="">— Choose a staff member —</option>
+          <optgroup label="Office Staff">{users.filter(u=>u.category==="office").map(u=><option key={u.id} value={u.id}>{u.name} — {u.role}</option>)}</optgroup>
+          <optgroup label="Pastors / LO">{users.filter(u=>u.category==="pastor"||u.role==="lo").map(u=><option key={u.id} value={u.id}>{u.name} — {u.lc_ph||u.role}</option>)}</optgroup>
         </select>
       </div>
 
       {asUser&&(
         <div>
-          <div style={{background:"rgba(201,168,76,0.1)",border:"1px solid rgba(201,168,76,0.3)",borderRadius:10,padding:"10px 14px",marginBottom:16,fontSize:13,color:"#c9a84c"}}>
-            Acting as: <strong>{asUser.name}</strong> · {asUser.role} {asUser.category==="pastor"?`· ${asUser.lc_ph}`:""}
+          {/* Identity bar */}
+          <div style={{background:"rgba(201,168,76,0.1)",border:"1px solid rgba(201,168,76,0.3)",borderRadius:10,padding:"10px 16px",marginBottom:20,display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
+            <div style={{fontSize:13,color:"#c9a84c"}}>Acting as: <strong>{asUser.name}</strong> · {asUser.role}{asUser.lc_ph?` · ${asUser.lc_ph}`:""}</div>
+            <div style={{fontSize:11,color:"rgba(255,255,255,0.4)"}}>
+              {isPastorRole(asUser)?"Pastor/LO — can submit Sunday Reports & Leave":isApproverRole(asUser)?`Approver — can act on Finance, Leave${myAppeals.length>0?", Appeals":""}`:null}
+            </div>
           </div>
 
-          {/* Action buttons */}
-          {!action&&(
-            <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
-              <button onClick={()=>setAction("finance")} style={{background:"rgba(230,126,34,0.15)",border:"1px solid rgba(230,126,34,0.4)",color:"#e67e22",borderRadius:8,padding:"10px 18px",cursor:"pointer",fontSize:13}}>💰 Submit Finance Request</button>
-              <button onClick={()=>setAction("leave")}   style={{background:"rgba(41,128,185,0.15)",border:"1px solid rgba(41,128,185,0.4)",color:"#2980b9",borderRadius:8,padding:"10px 18px",cursor:"pointer",fontSize:13}}>📋 Submit Leave Request</button>
-              {asUser.category==="pastor"&&<button onClick={()=>setAction("sunday")} style={{background:"rgba(39,174,96,0.15)",border:"1px solid rgba(39,174,96,0.4)",color:"#27ae60",borderRadius:8,padding:"10px 18px",cursor:"pointer",fontSize:13}}>⛪ Submit Sunday Report</button>}
+          {/* ── PASTOR / LO VIEW ──────────────────────────────────────── */}
+          {isPastorRole(asUser)&&(
+            <div>
+              {/* Sunday reports */}
+              <div style={{marginBottom:20}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+                  <div style={{color:"#27ae60",fontWeight:700,fontSize:14}}>⛪ Sunday Reports ({myReports.length})</div>
+                  <button onClick={()=>setAction(action==="sunday"?"":("sunday"))} style={{background:"rgba(39,174,96,0.15)",border:"1px solid rgba(39,174,96,0.4)",color:"#27ae60",borderRadius:8,padding:"6px 14px",cursor:"pointer",fontSize:12}}>+ New Report</button>
+                </div>
+                {action==="sunday"&&(
+                  <div style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(39,174,96,0.3)",borderRadius:12,padding:16,marginBottom:12}}>
+                    <div style={{color:"#27ae60",fontWeight:700,marginBottom:12}}>⛪ New Sunday Report as {asUser.name}</div>
+                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+                      {[["date","Date","date"],["men","Men","number"],["women","Women","number"],["children","Children","number"],["tithe","Tithe (₦)","number"],["offering","Offering (₦)","number"],["thanksgiving","Thanksgiving (₦)","number"],["project","Project (₦)","number"],["welfare","Welfare (₦)","number"],["others","Others (₦)","number"]].map(([k,label,type])=>(
+                        <div key={k}><label style={{fontSize:11,color:"rgba(255,255,255,0.5)",display:"block",marginBottom:3}}>{label}</label><input type={type} value={form[k]||""} onChange={sf(k)} style={inp} placeholder={type==="number"?"0":""}/></div>
+                      ))}
+                      {/* Live total */}
+                      <div style={{gridColumn:"1/-1",background:"rgba(201,168,76,0.1)",borderRadius:8,padding:"10px 14px"}}>
+                        <span style={{fontSize:12,color:"rgba(255,255,255,0.5)"}}>Total: </span>
+                        <span style={{color:"#c9a84c",fontWeight:700,fontSize:15}}>{money((parseFloat(form.tithe)||0)+(parseFloat(form.offering)||0)+(parseFloat(form.thanksgiving)||0)+(parseFloat(form.project)||0)+(parseFloat(form.welfare)||0)+(parseFloat(form.others)||0))}</span>
+                        <span style={{fontSize:11,color:"rgba(255,255,255,0.4)",marginLeft:12}}>25% DCC: {money(((parseFloat(form.tithe)||0)+(parseFloat(form.offering)||0)+(parseFloat(form.thanksgiving)||0)+(parseFloat(form.project)||0)+(parseFloat(form.welfare)||0)+(parseFloat(form.others)||0))*0.25)}</span>
+                      </div>
+                    </div>
+                    <div style={{display:"flex",gap:8,marginTop:12}}><button onClick={()=>setAction("")} style={{background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.15)",color:"#fff",borderRadius:8,padding:"7px 14px",cursor:"pointer",fontSize:12}}>Cancel</button><button onClick={submitSunday} style={{background:"#27ae60",border:"none",color:"#fff",borderRadius:8,padding:"7px 18px",cursor:"pointer",fontWeight:700,fontSize:12}}>Submit →</button></div>
+                  </div>
+                )}
+                {myReports.slice(0,5).map(r=>(
+                  <div key={r.id} style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:8,padding:"10px 14px",marginBottom:6,fontSize:12}}>
+                    <div style={{display:"flex",justifyContent:"space-between"}}>
+                      <span style={{color:"#fff",fontWeight:600}}>{fdate(r.date)}</span>
+                      <span style={{color:"#c9a84c"}}>{money(r.totalGross)}</span>
+                    </div>
+                    <div style={{color:"rgba(255,255,255,0.4)",marginTop:2}}>Attendance: {(r.attendance?.men||0)+(r.attendance?.women||0)+(r.attendance?.children||0)} · 25% DCC: {money(r.remittanceDue)}</div>
+                  </div>
+                ))}
+              </div>
+              {/* Leave */}
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+                <div style={{color:"#2980b9",fontWeight:700,fontSize:14}}>📋 Leave Requests</div>
+                <button onClick={()=>setAction(action==="leave"?"":"leave")} style={{background:"rgba(41,128,185,0.15)",border:"1px solid rgba(41,128,185,0.4)",color:"#2980b9",borderRadius:8,padding:"6px 14px",cursor:"pointer",fontSize:12}}>+ New Leave</button>
+              </div>
+              {action==="leave"&&<GhostLeaveForm form={form} sf={sf} onCancel={()=>setAction("")} onSubmit={submitLeave} LEAVE_TYPES={LEAVE_TYPES} inp={inp} asUser={asUser}/>}
             </div>
           )}
 
-          {/* Finance form */}
-          {action==="finance"&&(
-            <div style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:12,padding:18}}>
-              <div style={{color:"#c9a84c",fontWeight:700,marginBottom:14}}>💰 Finance Request as {asUser.name}</div>
-              <div style={{display:"grid",gap:12}}>
-                <div><label style={{fontSize:12,color:"rgba(255,255,255,0.5)"}}>Purpose</label><input value={form.purpose||""} onChange={sf("purpose")} style={{background:"#1a1a2e",color:"#fff",border:"1px solid rgba(255,255,255,0.2)",borderRadius:8,padding:"8px 12px",width:"100%",boxSizing:"border-box"}} placeholder="Purpose of request"/></div>
-                <div><label style={{fontSize:12,color:"rgba(255,255,255,0.5)"}}>Amount (₦)</label><input type="number" value={form.amount||""} onChange={sf("amount")} style={{background:"#1a1a2e",color:"#fff",border:"1px solid rgba(255,255,255,0.2)",borderRadius:8,padding:"8px 12px",width:"100%",boxSizing:"border-box"}} placeholder="0"/></div>
-                <div><label style={{fontSize:12,color:"rgba(255,255,255,0.5)"}}>Amount in Words</label><input value={form.amountWords||""} onChange={sf("amountWords")} style={{background:"#1a1a2e",color:"#fff",border:"1px solid rgba(255,255,255,0.2)",borderRadius:8,padding:"8px 12px",width:"100%",boxSizing:"border-box"}} placeholder="e.g. Fifty Thousand Naira Only"/></div>
-              </div>
-              <div style={{display:"flex",gap:10,marginTop:14}}><button onClick={()=>{setAction("");setForm({});}} style={{background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.15)",color:"#fff",borderRadius:8,padding:"8px 16px",cursor:"pointer"}}>Cancel</button><button onClick={submitFinance} style={{background:"#c9a84c",border:"none",color:"#0b1f3a",borderRadius:8,padding:"8px 20px",cursor:"pointer",fontWeight:700}}>Submit →</button></div>
-            </div>
-          )}
+          {/* ── OFFICE STAFF VIEW ─────────────────────────────────────── */}
+          {!isPastorRole(asUser)&&(
+            <div>
+              {/* Finance pending for this approver */}
+              {myFinPending.length>0&&(
+                <div style={{marginBottom:20}}>
+                  <div style={{color:"#e67e22",fontWeight:700,fontSize:14,marginBottom:10}}>💰 Finance Awaiting {asUser.name} ({myFinPending.length})</div>
+                  {myFinPending.map(r=>(
+                    <div key={r.id} style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(230,126,34,0.3)",borderRadius:10,padding:"12px 14px",marginBottom:8}}>
+                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:8}}>
+                        <div><div style={{color:"#fff",fontWeight:700,fontSize:13}}>{r.id} — {money(r.amount)}</div><div style={{fontSize:11,color:"rgba(255,255,255,0.4)",marginTop:2}}>{r.requester} · {r.purpose}</div></div>
+                        <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                          <button onClick={()=>actFinance(r,"approve")} style={{background:"rgba(39,174,96,0.2)",border:"1px solid rgba(39,174,96,0.4)",color:"#27ae60",borderRadius:6,padding:"4px 10px",cursor:"pointer",fontSize:11}}>✅ Approve</button>
+                          <button onClick={()=>actFinance(r,"reject")}  style={{background:"rgba(192,57,43,0.2)",border:"1px solid rgba(192,57,43,0.4)",color:"#e74c3c",borderRadius:6,padding:"4px 10px",cursor:"pointer",fontSize:11}}>❌ Reject</button>
+                        </div>
+                      </div>
+                      <input value={note} onChange={e=>setNote(e.target.value)} placeholder="Optional note..." style={{...inp,marginTop:8,fontSize:11,padding:"5px 8px"}}/>
+                    </div>
+                  ))}
+                </div>
+              )}
 
-          {/* Leave form */}
-          {action==="leave"&&(
-            <div style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:12,padding:18}}>
-              <div style={{color:"#c9a84c",fontWeight:700,marginBottom:14}}>📋 Leave Request as {asUser.name}</div>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-                <div style={{gridColumn:"1/-1"}}><label style={{fontSize:12,color:"rgba(255,255,255,0.5)"}}>Leave Type</label><select value={form.leaveType||""} onChange={sf("leaveType")} style={{background:"#1a1a2e",color:"#fff",border:"1px solid rgba(255,255,255,0.2)",borderRadius:8,padding:"8px 12px",width:"100%"}}><option value="">— Select —</option>{LEAVE_TYPES.map(t=><option key={t} value={t}>{t}</option>)}</select></div>
-                <div><label style={{fontSize:12,color:"rgba(255,255,255,0.5)"}}>Start Date</label><input type="date" value={form.startDate||""} onChange={sf("startDate")} style={{background:"#1a1a2e",color:"#fff",border:"1px solid rgba(255,255,255,0.2)",borderRadius:8,padding:"8px 12px",width:"100%",boxSizing:"border-box"}}/></div>
-                <div><label style={{fontSize:12,color:"rgba(255,255,255,0.5)"}}>End Date</label><input type="date" value={form.endDate||""} onChange={sf("endDate")} style={{background:"#1a1a2e",color:"#fff",border:"1px solid rgba(255,255,255,0.2)",borderRadius:8,padding:"8px 12px",width:"100%",boxSizing:"border-box"}}/></div>
-                <div style={{gridColumn:"1/-1"}}><label style={{fontSize:12,color:"rgba(255,255,255,0.5)"}}>Reason</label><textarea value={form.reason||""} onChange={sf("reason")} rows={2} style={{background:"#1a1a2e",color:"#fff",border:"1px solid rgba(255,255,255,0.2)",borderRadius:8,padding:"8px 12px",width:"100%",resize:"vertical",boxSizing:"border-box"}} placeholder="Reason for leave"/></div>
-              </div>
-              <div style={{display:"flex",gap:10,marginTop:14}}><button onClick={()=>{setAction("");setForm({});}} style={{background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.15)",color:"#fff",borderRadius:8,padding:"8px 16px",cursor:"pointer"}}>Cancel</button><button onClick={submitLeave} style={{background:"#c9a84c",border:"none",color:"#0b1f3a",borderRadius:8,padding:"8px 20px",cursor:"pointer",fontWeight:700}}>Submit →</button></div>
-            </div>
-          )}
+              {/* Leave pending for this approver */}
+              {myLvPending.length>0&&(
+                <div style={{marginBottom:20}}>
+                  <div style={{color:"#2980b9",fontWeight:700,fontSize:14,marginBottom:10}}>📋 Leave Awaiting {asUser.name} ({myLvPending.length})</div>
+                  {myLvPending.map(l=>(
+                    <div key={l.id} style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(41,128,185,0.3)",borderRadius:10,padding:"12px 14px",marginBottom:8}}>
+                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:8}}>
+                        <div><div style={{color:"#fff",fontWeight:700,fontSize:13}}>{l.type}</div><div style={{fontSize:11,color:"rgba(255,255,255,0.4)",marginTop:2}}>{l.requester} · {fdate(l.startDate)} – {fdate(l.endDate)} ({l.days}d)</div></div>
+                        <div style={{display:"flex",gap:6}}>
+                          <button onClick={()=>actLeave(l,"approve")} style={{background:"rgba(39,174,96,0.2)",border:"1px solid rgba(39,174,96,0.4)",color:"#27ae60",borderRadius:6,padding:"4px 10px",cursor:"pointer",fontSize:11}}>✅ Approve</button>
+                          <button onClick={()=>actLeave(l,"reject")}  style={{background:"rgba(192,57,43,0.2)",border:"1px solid rgba(192,57,43,0.4)",color:"#e74c3c",borderRadius:6,padding:"4px 10px",cursor:"pointer",fontSize:11}}>❌ Reject</button>
+                        </div>
+                      </div>
+                      <input value={note} onChange={e=>setNote(e.target.value)} placeholder="Optional note..." style={{...inp,marginTop:8,fontSize:11,padding:"5px 8px"}}/>
+                    </div>
+                  ))}
+                </div>
+              )}
 
-          {/* Sunday report form */}
-          {action==="sunday"&&(
-            <div style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:12,padding:18}}>
-              <div style={{color:"#c9a84c",fontWeight:700,marginBottom:14}}>⛪ Sunday Report as {asUser.name}</div>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-                <div><label style={{fontSize:12,color:"rgba(255,255,255,0.5)"}}>Date</label><input type="date" value={form.date||""} onChange={sf("date")} style={{background:"#1a1a2e",color:"#fff",border:"1px solid rgba(255,255,255,0.2)",borderRadius:8,padding:"8px 12px",width:"100%",boxSizing:"border-box"}}/></div>
-                <div><label style={{fontSize:12,color:"rgba(255,255,255,0.5)"}}>Men</label><input type="number" value={form.men||""} onChange={sf("men")} style={{background:"#1a1a2e",color:"#fff",border:"1px solid rgba(255,255,255,0.2)",borderRadius:8,padding:"8px 12px",width:"100%",boxSizing:"border-box"}} placeholder="0"/></div>
-                <div><label style={{fontSize:12,color:"rgba(255,255,255,0.5)"}}>Women</label><input type="number" value={form.women||""} onChange={sf("women")} style={{background:"#1a1a2e",color:"#fff",border:"1px solid rgba(255,255,255,0.2)",borderRadius:8,padding:"8px 12px",width:"100%",boxSizing:"border-box"}} placeholder="0"/></div>
-                <div><label style={{fontSize:12,color:"rgba(255,255,255,0.5)"}}>Children</label><input type="number" value={form.children||""} onChange={sf("children")} style={{background:"#1a1a2e",color:"#fff",border:"1px solid rgba(255,255,255,0.2)",borderRadius:8,padding:"8px 12px",width:"100%",boxSizing:"border-box"}} placeholder="0"/></div>
-                <div><label style={{fontSize:12,color:"rgba(255,255,255,0.5)"}}>Tithe (₦)</label><input type="number" value={form.tithe||""} onChange={sf("tithe")} style={{background:"#1a1a2e",color:"#fff",border:"1px solid rgba(255,255,255,0.2)",borderRadius:8,padding:"8px 12px",width:"100%",boxSizing:"border-box"}} placeholder="0"/></div>
-                <div><label style={{fontSize:12,color:"rgba(255,255,255,0.5)"}}>Offering (₦)</label><input type="number" value={form.offering||""} onChange={sf("offering")} style={{background:"#1a1a2e",color:"#fff",border:"1px solid rgba(255,255,255,0.2)",borderRadius:8,padding:"8px 12px",width:"100%",boxSizing:"border-box"}} placeholder="0"/></div>
-                <div><label style={{fontSize:12,color:"rgba(255,255,255,0.5)"}}>Thanksgiving (₦)</label><input type="number" value={form.thanksgiving||""} onChange={sf("thanksgiving")} style={{background:"#1a1a2e",color:"#fff",border:"1px solid rgba(255,255,255,0.2)",borderRadius:8,padding:"8px 12px",width:"100%",boxSizing:"border-box"}} placeholder="0"/></div>
-                <div><label style={{fontSize:12,color:"rgba(255,255,255,0.5)"}}>Others (₦)</label><input type="number" value={form.others||""} onChange={sf("others")} style={{background:"#1a1a2e",color:"#fff",border:"1px solid rgba(255,255,255,0.2)",borderRadius:8,padding:"8px 12px",width:"100%",boxSizing:"border-box"}} placeholder="0"/></div>
+              {/* Sunday appeals pending */}
+              {myAppeals.length>0&&(
+                <div style={{marginBottom:20}}>
+                  <div style={{color:"#e67e22",fontWeight:700,fontSize:14,marginBottom:10}}>⚠️ Sunday Appeals Pending ({myAppeals.length})</div>
+                  {myAppeals.map(r=>(
+                    <div key={r.id} style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(230,126,34,0.3)",borderRadius:10,padding:"12px 14px",marginBottom:8}}>
+                      <div style={{color:"#fff",fontWeight:700,fontSize:13}}>{r.pastorName} — {r.lc_ph}</div>
+                      <div style={{fontSize:12,color:"rgba(255,255,255,0.5)",margin:"4px 0 8px"}}>{fdate(r.date)} · Appeal: "{r.appeal.text}"</div>
+                      <input value={note} onChange={e=>setNote(e.target.value)} placeholder="Admin note..." style={{...inp,marginBottom:8,fontSize:11,padding:"5px 8px"}}/>
+                      <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                        <button onClick={()=>actAppeal(r,"accepted",note)} style={{background:"rgba(39,174,96,0.2)",border:"1px solid rgba(39,174,96,0.4)",color:"#27ae60",borderRadius:6,padding:"4px 10px",cursor:"pointer",fontSize:11}}>✅ Accept Appeal</button>
+                        <button onClick={()=>actAppeal(r,"resubmit",note)} style={{background:"rgba(41,128,185,0.2)",border:"1px solid rgba(41,128,185,0.4)",color:"#2980b9",borderRadius:6,padding:"4px 10px",cursor:"pointer",fontSize:11}}>🔄 Return for Correction</button>
+                        <button onClick={()=>actAppeal(r,"resolved",note)} style={{background:"rgba(201,168,76,0.2)",border:"1px solid rgba(201,168,76,0.4)",color:"#c9a84c",borderRadius:6,padding:"4px 10px",cursor:"pointer",fontSize:11}}>📌 Mark Resolved</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Submit own finance request (non-approver roles can too) */}
+              <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:10}}>
+                <button onClick={()=>setAction(action==="finance"?"":"finance")} style={{background:"rgba(230,126,34,0.15)",border:"1px solid rgba(230,126,34,0.4)",color:"#e67e22",borderRadius:8,padding:"8px 16px",cursor:"pointer",fontSize:12}}>💰 Submit Finance Request</button>
+                <button onClick={()=>setAction(action==="leave"?"":"leave")}   style={{background:"rgba(41,128,185,0.15)",border:"1px solid rgba(41,128,185,0.4)",color:"#2980b9",borderRadius:8,padding:"8px 16px",cursor:"pointer",fontSize:12}}>📋 Submit Leave Request</button>
               </div>
-              <div style={{display:"flex",gap:10,marginTop:14}}><button onClick={()=>{setAction("");setForm({});}} style={{background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.15)",color:"#fff",borderRadius:8,padding:"8px 16px",cursor:"pointer"}}>Cancel</button><button onClick={submitSunday} style={{background:"#c9a84c",border:"none",color:"#0b1f3a",borderRadius:8,padding:"8px 20px",cursor:"pointer",fontWeight:700}}>Submit →</button></div>
+              {action==="finance"&&(
+                <div style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(230,126,34,0.2)",borderRadius:12,padding:16,marginBottom:12}}>
+                  <div style={{color:"#e67e22",fontWeight:700,marginBottom:12}}>💰 Finance Request as {asUser.name}</div>
+                  <div style={{display:"grid",gap:10}}>
+                    <div><label style={{fontSize:11,color:"rgba(255,255,255,0.5)"}}>Purpose</label><input value={form.purpose||""} onChange={sf("purpose")} style={inp} placeholder="Purpose of request"/></div>
+                    <div><label style={{fontSize:11,color:"rgba(255,255,255,0.5)"}}>Amount (₦)</label><input type="number" value={form.amount||""} onChange={e=>{sf("amount")(e);setForm(p=>({...p,amountWords:numberToWords(parseFloat(e.target.value)||0)}));}} style={inp} placeholder="0"/></div>
+                    <div><label style={{fontSize:11,color:"rgba(255,255,255,0.5)"}}>Amount in Words (auto-filled)</label><input value={form.amountWords||""} onChange={sf("amountWords")} style={inp} placeholder="Will auto-fill"/></div>
+                  </div>
+                  <div style={{display:"flex",gap:8,marginTop:12}}><button onClick={()=>{setAction("");setForm({});}} style={{background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.15)",color:"#fff",borderRadius:8,padding:"7px 14px",cursor:"pointer",fontSize:12}}>Cancel</button><button onClick={submitFinance} style={{background:"#c9a84c",border:"none",color:"#0b1f3a",borderRadius:8,padding:"7px 18px",cursor:"pointer",fontWeight:700,fontSize:12}}>Submit →</button></div>
+                </div>
+              )}
+              {action==="leave"&&<GhostLeaveForm form={form} sf={sf} onCancel={()=>setAction("")} onSubmit={submitLeave} LEAVE_TYPES={LEAVE_TYPES} inp={inp} asUser={asUser}/>}
+
+              {/* Show nothing pending message */}
+              {myFinPending.length===0&&myLvPending.length===0&&myAppeals.length===0&&action===""&&(
+                <div style={{textAlign:"center",color:"rgba(255,255,255,0.25)",fontSize:12,padding:"20px 0"}}>No pending items for {asUser.name} right now.</div>
+              )}
             </div>
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+// ── Ghost Leave Form — shared between pastor and office staff ─────────────────
+function GhostLeaveForm({ form, sf, onCancel, onSubmit, LEAVE_TYPES, inp, asUser }) {
+  return (
+    <div style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(41,128,185,0.2)",borderRadius:12,padding:16,marginBottom:12}}>
+      <div style={{color:"#2980b9",fontWeight:700,marginBottom:12}}>📋 Leave Request as {asUser.name}</div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+        <div style={{gridColumn:"1/-1"}}><label style={{fontSize:11,color:"rgba(255,255,255,0.5)"}}>Leave Type</label><select value={form.leaveType||""} onChange={sf("leaveType")} style={inp}><option value="">— Select —</option>{LEAVE_TYPES.map(t=><option key={t} value={t}>{t}</option>)}</select></div>
+        <div><label style={{fontSize:11,color:"rgba(255,255,255,0.5)"}}>Start Date</label><input type="date" value={form.startDate||""} onChange={sf("startDate")} style={inp}/></div>
+        <div><label style={{fontSize:11,color:"rgba(255,255,255,0.5)"}}>End Date</label><input type="date" value={form.endDate||""} onChange={sf("endDate")} style={inp}/></div>
+        <div style={{gridColumn:"1/-1"}}>
+          <label style={{fontSize:11,color:"rgba(255,255,255,0.5)"}}>Duration</label>
+          <div style={{color:"#c9a84c",fontSize:13,fontWeight:700,padding:"6px 0"}}>
+            {form.startDate&&form.endDate?`${Math.max(1,Math.round((new Date(form.endDate)-new Date(form.startDate))/(86400000))+1)} day(s)`:"Select dates above"}
+          </div>
+        </div>
+        <div style={{gridColumn:"1/-1"}}><label style={{fontSize:11,color:"rgba(255,255,255,0.5)"}}>Reason</label><textarea value={form.reason||""} onChange={sf("reason")} rows={2} style={{...inp,resize:"vertical"}} placeholder="Reason for leave"/></div>
+      </div>
+      <div style={{display:"flex",gap:8,marginTop:12}}><button onClick={onCancel} style={{background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.15)",color:"#fff",borderRadius:8,padding:"7px 14px",cursor:"pointer",fontSize:12}}>Cancel</button><button onClick={onSubmit} style={{background:"#2980b9",border:"none",color:"#fff",borderRadius:8,padding:"7px 18px",cursor:"pointer",fontWeight:700,fontSize:12}}>Submit →</button></div>
     </div>
   );
 }
@@ -3782,11 +3961,55 @@ function MasterRecords({ requests, setRequests, leaves, setLeaves, sundayReports
       {tab==="sunday"&&sundayReports.map(r=>(
         <div key={r.id} style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:10,padding:"12px 14px",marginBottom:10}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:8}}>
-            <div><div style={{fontWeight:700,color:"#fff",fontSize:14}}>{r.id} — {r.pastorName}</div><div style={{fontSize:12,color:"rgba(255,255,255,0.5)",marginTop:2}}>{r.lc_ph} · {fdate(r.date)} · {money(r.totalGross)}</div></div>
-            <div style={{display:"flex",gap:6}}>
-              <button onClick={()=>deleteRecord("sunday",r.id)} style={{background:"rgba(192,57,43,0.2)",border:"1px solid rgba(192,57,43,0.4)",color:"#e74c3c",borderRadius:6,padding:"4px 10px",cursor:"pointer",fontSize:11}}>🗑️ Delete</button>
+            <div>
+              <div style={{fontWeight:700,color:"#fff",fontSize:14}}>{r.id} — {r.pastorName}</div>
+              <div style={{fontSize:12,color:"rgba(255,255,255,0.5)",marginTop:2}}>{r.lc_ph} · {fdate(r.date)} · {money(r.totalGross)}</div>
+              {r.appeal&&<div style={{fontSize:11,marginTop:4,color:r.appeal.status==="pending"?"#e67e22":r.appeal.status==="resolved"||r.appeal.status==="accepted"?"#27ae60":"#2980b9",fontWeight:600}}>
+                Appeal: {r.appeal.status} — "{r.appeal.text}"
+              </div>}
+            </div>
+            <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+              <button onClick={()=>setEditing({type:"sunday",data:{...r}})} style={{background:"rgba(201,168,76,0.2)",border:"1px solid rgba(201,168,76,0.4)",color:"#c9a84c",borderRadius:6,padding:"4px 10px",cursor:"pointer",fontSize:11}}>✏️ Edit</button>
+              {r.appeal&&r.appeal.status==="pending"&&(
+                <>
+                  <button onClick={()=>{setSundayReports(rs=>rs.map(x=>x.id===r.id?{...x,appeal:{...x.appeal,status:"accepted",adminNote:"Accepted by master",adminBy:"Admin",adminDate:today()}}:x));addLog("APPEAL_ACCEPT",`Accepted appeal on ${r.id}`);toast("✅ Appeal accepted.");}} style={{background:"rgba(39,174,96,0.2)",border:"1px solid rgba(39,174,96,0.4)",color:"#27ae60",borderRadius:6,padding:"4px 10px",cursor:"pointer",fontSize:11}}>✅ Accept</button>
+                  <button onClick={()=>{setSundayReports(rs=>rs.map(x=>x.id===r.id?{...x,appeal:{...x.appeal,status:"resolved",adminNote:"Resolved by master",adminBy:"Admin",adminDate:today()}}:x));addLog("APPEAL_RESOLVE",`Resolved appeal on ${r.id}`);toast("✅ Appeal resolved.");}} style={{background:"rgba(201,168,76,0.2)",border:"1px solid rgba(201,168,76,0.4)",color:"#c9a84c",borderRadius:6,padding:"4px 10px",cursor:"pointer",fontSize:11}}>📌 Resolve</button>
+                  <button onClick={()=>{setSundayReports(rs=>rs.map(x=>x.id===r.id?{...x,appeal:{...x.appeal,status:"resubmit",adminNote:"Return for correction",adminBy:"Admin",adminDate:today()}}:x));addLog("APPEAL_RESUBMIT",`Returned appeal on ${r.id}`);toast("🔄 Returned for correction.");}} style={{background:"rgba(41,128,185,0.2)",border:"1px solid rgba(41,128,185,0.4)",color:"#2980b9",borderRadius:6,padding:"4px 10px",cursor:"pointer",fontSize:11}}>🔄 Return</button>
+                </>
+              )}
+              {r.appeal&&r.appeal.status!=="pending"&&(
+                <select value={r.appeal.status} onChange={e=>{const s=e.target.value;setSundayReports(rs=>rs.map(x=>x.id===r.id?{...x,appeal:{...x.appeal,status:s,adminDate:today()}}:x));addLog("APPEAL_STATUS",`Changed appeal ${r.id} → ${s}`);toast("✅ Appeal status updated.");}} style={{background:"#1a1a2e",color:"#c9a84c",border:"1px solid rgba(201,168,76,0.4)",borderRadius:6,padding:"4px 8px",fontSize:11,cursor:"pointer"}}>
+                  <option value="pending">pending</option>
+                  <option value="accepted">accepted</option>
+                  <option value="resolved">resolved</option>
+                  <option value="resubmit">resubmit</option>
+                </select>
+              )}
+              <button onClick={()=>deleteRecord("sunday",r.id)} style={{background:"rgba(192,57,43,0.2)",border:"1px solid rgba(192,57,43,0.4)",color:"#e74c3c",borderRadius:6,padding:"4px 10px",cursor:"pointer",fontSize:11}}>🗑️</button>
             </div>
           </div>
+          {/* Inline edit for sunday report */}
+          {editing?.type==="sunday"&&editing.data.id===r.id&&(
+            <div style={{marginTop:12,borderTop:"1px solid rgba(255,255,255,0.08)",paddingTop:12}}>
+              <div style={{color:"#c9a84c",fontWeight:700,fontSize:13,marginBottom:10}}>✏️ Edit Report</div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+                {[["men","Men"],["women","Women"],["children","Children"],["tithe","Tithe"],["offering","Offering"],["thanksgiving","Thanksgiving"],["project","Project"],["welfare","Welfare"],["others","Others"]].map(([k,label])=>(
+                  <div key={k}><label style={{fontSize:10,color:"rgba(255,255,255,0.4)",display:"block",marginBottom:2}}>{label}</label>
+                  <input type="number" value={k==="men"||k==="women"||k==="children"?(editing.data.attendance?.[k]||0):(editing.data.collections?.[k]||0)}
+                    onChange={e=>{const v=parseFloat(e.target.value)||0;setEditing(prev=>{const d={...prev.data};if(["men","women","children"].includes(k)){d.attendance={...d.attendance,[k]:v};}else{d.collections={...d.collections,[k]:v};const c=d.collections;d.totalGross=(c.tithe||0)+(c.offering||0)+(c.thanksgiving||0)+(c.project||0)+(c.welfare||0)+(c.others||0);d.remittanceDue=d.totalGross*0.25;}return{...prev,data:d};});}}
+                    style={{background:"#1a1a2e",color:"#fff",border:"1px solid rgba(255,255,255,0.2)",borderRadius:6,padding:"5px 8px",width:"100%",boxSizing:"border-box",fontSize:12}}/></div>
+                ))}
+                <div style={{gridColumn:"1/-1",background:"rgba(201,168,76,0.08)",borderRadius:6,padding:"8px 12px",fontSize:12}}>
+                  <span style={{color:"rgba(255,255,255,0.5)"}}>Total: </span><span style={{color:"#c9a84c",fontWeight:700}}>{money(editing.data.totalGross||0)}</span>
+                  <span style={{color:"rgba(255,255,255,0.4)",marginLeft:12}}>25% DCC: </span><span style={{color:"#27ae60",fontWeight:700}}>{money(editing.data.remittanceDue||0)}</span>
+                </div>
+              </div>
+              <div style={{display:"flex",gap:8,marginTop:10}}>
+                <button onClick={()=>setEditing(null)} style={{background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.15)",color:"#fff",borderRadius:6,padding:"5px 12px",cursor:"pointer",fontSize:12}}>Cancel</button>
+                <button onClick={()=>{setSundayReports(rs=>rs.map(x=>x.id===r.id?editing.data:x));addLog("EDIT_SUNDAY",`Edited Sunday report ${r.id}`);toast("✅ Report updated.");setEditing(null);}} style={{background:"#c9a84c",border:"none",color:"#0b1f3a",borderRadius:6,padding:"5px 14px",cursor:"pointer",fontWeight:700,fontSize:12}}>Save →</button>
+              </div>
+            </div>
+          )}
         </div>
       ))}
 
