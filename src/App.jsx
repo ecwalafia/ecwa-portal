@@ -3472,7 +3472,8 @@ function SignIn({ users, setUsers, onLogin, onGo, pwdReqs, setPwdReqs }) {
 // ══════════════════════════════════════════════════════════════════════════════
 function MasterPanel({ user, users, setUsers, requests, setRequests, leaves, setLeaves,
   sundayReports, setSundayReports, announcements, setAnnouncements, lccs, setLccs,
-  attendance, setAttendance, toast, onLogout }) {
+  attendance, setAttendance, banner, setBanner, maintMode, setMaintMode, maintMsg, setMaintMsg,
+  pwdReqs, setPwdReqs, toast, onLogout }) {
 
   const [section, setSection] = useState("dashboard");
   const [auditLog, setAuditLog] = useState(() => {
@@ -3530,8 +3531,8 @@ function MasterPanel({ user, users, setUsers, requests, setRequests, leaves, set
           {section==="records"    && <MasterRecords requests={requests} setRequests={setRequests} leaves={leaves} setLeaves={setLeaves} sundayReports={sundayReports} setSundayReports={setSundayReports} users={users} toast={toast} addLog={addLog}/>}
           {section==="staff"      && <MasterStaff users={users} setUsers={setUsers} toast={toast} addLog={addLog}/>}
           {section==="lcc"        && <MasterLCC lccs={lccs} setLccs={setLccs} users={users} setUsers={setUsers} toast={toast} addLog={addLog}/>}
-          {section==="announce"   && <MasterAnnounce announcements={announcements} setAnnouncements={setAnnouncements} users={users} toast={toast} addLog={addLog}/>}
-          {section==="maint"      && <MasterMaint users={users} setUsers={setUsers} toast={toast} addLog={addLog}/>}
+          {section==="announce"   && <MasterAnnounce announcements={announcements} setAnnouncements={setAnnouncements} users={users} banner={banner} setBanner={setBanner} toast={toast} addLog={addLog}/>}
+          {section==="maint"      && <MasterMaint maintMode={maintMode} setMaintMode={setMaintMode} maintMsg={maintMsg} setMaintMsg={setMaintMsg} toast={toast} addLog={addLog}/>}
           {section==="audit"      && <MasterAudit log={auditLog} setAuditLog={setAuditLog}/>}
         </div>
       </div>
@@ -4205,8 +4206,7 @@ function MasterLCC({ lccs, setLccs, users, setUsers, toast, addLog }) {
 }
 
 // ── Master Announcements ───────────────────────────────────────────────────────
-function MasterAnnounce({ announcements, setAnnouncements, users, toast, addLog }) {
-  const [banner, setBanner]     = useState(() => { try { return JSON.parse(localStorage.getItem("ecwa_banner")||"null"); } catch { return null; } });
+function MasterAnnounce({ announcements, setAnnouncements, users, banner, setBanner, toast, addLog }) {
   const [bannerText, setBannerText] = useState(banner?.text||"");
   const [bannerType, setBannerType] = useState(banner?.type||"info");
   const [showBannerForm, setShowBannerForm] = useState(false);
@@ -4214,10 +4214,15 @@ function MasterAnnounce({ announcements, setAnnouncements, users, toast, addLog 
   const saveBanner = () => {
     const b = bannerText.trim() ? { text:bannerText.trim(), type:bannerType, set:today() } : null;
     setBanner(b);
-    try { localStorage.setItem("ecwa_banner", JSON.stringify(b)); } catch {}
     addLog("SET_BANNER", b?`Set portal banner: "${bannerText}"`:"Cleared portal banner");
-    toast(b?"✅ Emergency banner set — all users will see it on login.":"✅ Banner cleared.");
+    toast(b?"✅ Emergency banner active — all users will see it on every device.":"✅ Banner cleared.");
     setShowBannerForm(false);
+  };
+
+  const clearBanner = () => {
+    setBanner(null); setBannerText(""); setBannerType("info");
+    addLog("CLEAR_BANNER","Cleared portal banner");
+    toast("✅ Banner cleared.");
   };
 
   const deleteAnn = (id) => {
@@ -4233,12 +4238,12 @@ function MasterAnnounce({ announcements, setAnnouncements, users, toast, addLog 
       {/* Emergency Banner */}
       <div style={{background:"rgba(192,57,43,0.1)",border:"1px solid rgba(192,57,43,0.3)",borderRadius:12,padding:16,marginBottom:24}}>
         <div style={{color:"#e74c3c",fontWeight:700,marginBottom:8}}>🚨 Portal-Wide Emergency Banner</div>
-        <div style={{fontSize:12,color:"rgba(255,255,255,0.5)",marginBottom:12}}>This banner appears on every user's screen when they log in, above everything else.</div>
+        <div style={{fontSize:12,color:"rgba(255,255,255,0.5)",marginBottom:12}}>Appears on every user's screen on every device. Saved to Supabase — works globally.</div>
         {banner&&<div style={{background:"rgba(192,57,43,0.2)",borderRadius:8,padding:"8px 12px",fontSize:13,color:"#ff8a80",marginBottom:10}}>Current: "{banner.text}" (set {fdate(banner.set)})</div>}
         {!showBannerForm&&(
           <div style={{display:"flex",gap:8}}>
             <button onClick={()=>setShowBannerForm(true)} style={{background:"rgba(192,57,43,0.2)",border:"1px solid rgba(192,57,43,0.4)",color:"#e74c3c",borderRadius:8,padding:"6px 14px",cursor:"pointer",fontSize:12}}>{banner?"✏️ Edit Banner":"+ Set Banner"}</button>
-            {banner&&<button onClick={()=>{setBanner(null);setBannerText("");try{localStorage.removeItem("ecwa_banner")}catch{};toast("Banner cleared.");}} style={{background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.15)",color:"rgba(255,255,255,0.6)",borderRadius:8,padding:"6px 14px",cursor:"pointer",fontSize:12}}>✕ Clear Banner</button>}
+            {banner&&<button onClick={clearBanner} style={{background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.15)",color:"rgba(255,255,255,0.6)",borderRadius:8,padding:"6px 14px",cursor:"pointer",fontSize:12}}>✕ Clear Banner</button>}
           </div>
         )}
         {showBannerForm&&(
@@ -4271,16 +4276,12 @@ function MasterAnnounce({ announcements, setAnnouncements, users, toast, addLog 
 }
 
 // ── Master Maintenance ─────────────────────────────────────────────────────────
-function MasterMaint({ users, setUsers, toast, addLog }) {
-  const [maintMode, setMaintMode] = useState(() => { try { return JSON.parse(localStorage.getItem("ecwa_maint")||"false"); } catch { return false; } });
-  const [maintMsg, setMaintMsg]   = useState(() => { try { return localStorage.getItem("ecwa_maint_msg")||"The portal is currently undergoing scheduled maintenance. Please check back shortly."; } catch { return ""; } });
-
+function MasterMaint({ maintMode, setMaintMode, maintMsg, setMaintMsg, toast, addLog }) {
   const toggleMaint = () => {
     const newVal = !maintMode;
     setMaintMode(newVal);
-    try { localStorage.setItem("ecwa_maint", JSON.stringify(newVal)); localStorage.setItem("ecwa_maint_msg", maintMsg); } catch {}
     addLog("MAINTENANCE_MODE", newVal?"Enabled maintenance mode":"Disabled maintenance mode");
-    toast(newVal?"🔧 Maintenance mode ON — all users will see maintenance screen.":"✅ Maintenance mode OFF — portal is live.");
+    toast(newVal?"🔧 Maintenance mode ON — all users on all devices blocked.":"✅ Maintenance mode OFF — portal is live.");
   };
 
   return (
@@ -4290,7 +4291,7 @@ function MasterMaint({ users, setUsers, toast, addLog }) {
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}>
           <div>
             <div style={{fontWeight:700,color:"#fff",fontSize:15}}>Portal Maintenance Mode</div>
-            <div style={{fontSize:12,color:"rgba(255,255,255,0.4)",marginTop:4}}>When enabled, all users see a maintenance screen. You still have full access.</div>
+            <div style={{fontSize:12,color:"rgba(255,255,255,0.4)",marginTop:4}}>Saved to Supabase — blocks all users on all devices instantly. You still have full access.</div>
           </div>
           <div onClick={toggleMaint} style={{width:52,height:28,background:maintMode?"#27ae60":"rgba(255,255,255,0.15)",borderRadius:14,cursor:"pointer",position:"relative",transition:"background 0.2s"}}>
             <div style={{width:22,height:22,background:"#fff",borderRadius:"50%",position:"absolute",top:3,left:maintMode?27:3,transition:"left 0.2s"}}/>
@@ -4299,7 +4300,7 @@ function MasterMaint({ users, setUsers, toast, addLog }) {
         <div style={{fontSize:13,color:maintMode?"#27ae60":"rgba(255,255,255,0.4)",fontWeight:700,marginBottom:14}}>{maintMode?"🟢 MAINTENANCE MODE IS ON":"⚫ Maintenance mode is off"}</div>
         <div><label style={{fontSize:12,color:"rgba(255,255,255,0.5)",display:"block",marginBottom:6}}>Maintenance Message (shown to users)</label>
         <textarea value={maintMsg} onChange={e=>setMaintMsg(e.target.value)} rows={3} style={{background:"#1a1a2e",color:"#fff",border:"1px solid rgba(255,255,255,0.2)",borderRadius:8,padding:"8px 12px",width:"100%",resize:"vertical",boxSizing:"border-box",fontSize:13}}/></div>
-        <button onClick={()=>{try{localStorage.setItem("ecwa_maint_msg",maintMsg);}catch{} toast("Message saved.");}} style={{marginTop:10,background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.15)",color:"#fff",borderRadius:8,padding:"6px 14px",cursor:"pointer",fontSize:12}}>Save Message</button>
+        <button onClick={()=>{toast("Message will save automatically with next toggle.");}} style={{marginTop:10,background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.15)",color:"#fff",borderRadius:8,padding:"6px 14px",cursor:"pointer",fontSize:12}}>ℹ️ Message auto-saves to Supabase</button>
       </div>
     </div>
   );
@@ -4595,10 +4596,10 @@ export default function App() {
   const [lccs,setLccs]     = useState(LCCS_DEFAULT);
   const [me,setMe]         = useState(null);
   const [scr,setScr]       = useState("login");
-  // Read fresh every render so changes made in same session are always picked up
-  const banner    = (() => { try{return JSON.parse(localStorage.getItem("ecwa_banner")||"null");}catch{return null;} })();
-  const maintMode = (() => { try{return JSON.parse(localStorage.getItem("ecwa_maint")||"false");}catch{return false;} })();
-  const maintMsg  = (() => { try{return localStorage.getItem("ecwa_maint_msg")||"The portal is currently undergoing scheduled maintenance. Please check back shortly.";}catch{return "";} })();
+  // Emergency banner + maintenance mode — stored in Supabase so all devices see same value
+  const [banner,   setBanner]   = useState(null);
+  const [maintMode,setMaintMode]= useState(false);
+  const [maintMsg, setMaintMsg] = useState("The portal is currently undergoing scheduled maintenance. Please check back shortly.");
 
   // ── Load all data from Supabase on startup ─────────────────────────────────
   useEffect(() => {
@@ -4616,6 +4617,9 @@ export default function App() {
           if (map.announcements) setAnnouncements(map.announcements);
           if (map.pwdReqs)       setPwdReqs(map.pwdReqs);
           if (map.lccs)          setLccs(map.lccs);
+          if (map.banner !== undefined)   setBanner(map.banner);
+          if (map.maintMode !== undefined){ setMaintMode(map.maintMode); }
+          if (map.maintMsg)   setMaintMsg(map.maintMsg);
         }
       } catch(e) { console.error("Load failed:", e); }
       setLoading(false);
@@ -4632,6 +4636,9 @@ export default function App() {
   useEffect(() => { if(!loading) sbSave("announcements", announcements); }, [announcements, loading]);
   useEffect(() => { if(!loading) sbSave("pwdReqs", pwdReqs); }, [pwdReqs, loading]);
   useEffect(() => { if(!loading) sbSave("lccs", lccs); }, [lccs, loading]);
+  useEffect(() => { if(!loading) sbSave("banner", banner); }, [banner, loading]);
+  useEffect(() => { if(!loading) sbSave("maintMode", maintMode); }, [maintMode, loading]);
+  useEffect(() => { if(!loading) sbSave("maintMsg", maintMsg); }, [maintMsg, loading]);
 
   // ── Loading screen ─────────────────────────────────────────────────────────
   if(loading) return(
@@ -4661,7 +4668,7 @@ export default function App() {
         <p style={{fontSize:12,color:"rgba(255,255,255,0.3)",marginTop:24}}>ECWA Lafia DCC Staff Portal</p>
       </div>
     ):me.isMaster?(
-      <MasterPanel user={me} users={users} setUsers={setUsers} requests={requests} setRequests={setReqs} leaves={leaves} setLeaves={setLeaves} sundayReports={sundayReports} setSundayReports={setSundayReports} attendance={attendance} setAttendance={setAttendance} announcements={announcements} setAnnouncements={setAnnouncements} lccs={lccs} setLccs={setLccs} pwdReqs={pwdReqs} setPwdReqs={setPwdReqs} toast={(m)=>{}} onLogout={()=>setMe(null)}/>
+      <MasterPanel user={me} users={users} setUsers={setUsers} requests={requests} setRequests={setReqs} leaves={leaves} setLeaves={setLeaves} sundayReports={sundayReports} setSundayReports={setSundayReports} attendance={attendance} setAttendance={setAttendance} announcements={announcements} setAnnouncements={setAnnouncements} lccs={lccs} setLccs={setLccs} pwdReqs={pwdReqs} setPwdReqs={setPwdReqs} banner={banner} setBanner={setBanner} maintMode={maintMode} setMaintMode={setMaintMode} maintMsg={maintMsg} setMaintMsg={setMaintMsg} toast={(m)=>{}} onLogout={()=>setMe(null)}/>
     ):(
       <Dashboard user={me} users={users} setUsers={setUsers} requests={requests} setRequests={setReqs} leaves={leaves} setLeaves={setLeaves} sundayReports={sundayReports} setSundayReports={setSundayReports} attendance={attendance} setAttendance={setAttendance} announcements={announcements} setAnnouncements={setAnnouncements} pwdReqs={pwdReqs} setPwdReqs={setPwdReqs} lccs={lccs} setLccs={setLccs} onLogout={()=>setMe(null)}/>
     )}
