@@ -4595,9 +4595,10 @@ export default function App() {
   const [lccs,setLccs]     = useState(LCCS_DEFAULT);
   const [me,setMe]         = useState(null);
   const [scr,setScr]       = useState("login");
-  const [banner]           = useState(()=>{ try{return JSON.parse(localStorage.getItem("ecwa_banner")||"null");}catch{return null;} });
-  const [maintMode]        = useState(()=>{ try{return JSON.parse(localStorage.getItem("ecwa_maint")||"false");}catch{return false;} });
-  const maintMsg           = (() => { try{return localStorage.getItem("ecwa_maint_msg")||"The portal is currently undergoing scheduled maintenance. Please check back shortly.";}catch{return "";} })();
+  // Read fresh every render so changes made in same session are always picked up
+  const banner    = (() => { try{return JSON.parse(localStorage.getItem("ecwa_banner")||"null");}catch{return null;} })();
+  const maintMode = (() => { try{return JSON.parse(localStorage.getItem("ecwa_maint")||"false");}catch{return false;} })();
+  const maintMsg  = (() => { try{return localStorage.getItem("ecwa_maint_msg")||"The portal is currently undergoing scheduled maintenance. Please check back shortly.";}catch{return "";} })();
 
   // ── Load all data from Supabase on startup ─────────────────────────────────
   useEffect(() => {
