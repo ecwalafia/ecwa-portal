@@ -186,19 +186,29 @@ const CHURCHES_BY_LCC = {
   "Rukubi":["ECWA Rukubi","ECWA Okpatta","ECWA Sukene","ECWA Kpakwu","ECWA P/H, Arishi"],
 };
 
-const DEPARTMENTS = [
+const BUILTIN_DEPARTMENTS = [
   { id:"finance",   label:"Finance",                    head_role:"accountant"      },
   { id:"missions",  label:"Missions (EMS)",              head_role:"ems_coordinator" },
   { id:"admin",     label:"Admin & Personnel",           head_role:"secretary"       },
   { id:"jets",      label:"JETS / Doma Study Center",    head_role:"lecturer"        },
   { id:"executive", label:"Executive",                   head_role:"chairman"        },
 ];
+// Custom departments added by master — stored in Supabase as "customDepts"
+// Shape: [{ id:"media", label:"Media & Communications", addedOn:"2026-03-08" }]
+let _customDepts = [];
+function setCustomDeptsCache(d){ _customDepts = d||[]; }
+function getCustomDepts(){ return _customDepts; }
+function getAllDepartments(){
+  return [...BUILTIN_DEPARTMENTS, ..._customDepts];
+}
+// Alias for backward compat
+const DEPARTMENTS = BUILTIN_DEPARTMENTS;
 
-const OFFICE_ROLES = [
-  { title:"Chairman",                  role:"chairman",        dept:"executive" },
-  { title:"Vice Chairman",             role:"vice_chairman",   dept:"executive" },
-  { title:"Secretary",                 role:"secretary",       dept:"admin"     },
-  { title:"ADS (Asst. DCC Secretary)", role:"ads",             dept:"admin"     },
+// Appointment-only roles — assigned by Master Admin, cannot self-register
+const APPOINTMENT_ROLES = ["chairman","vice_chairman","secretary","ads","lo"];
+
+const BUILTIN_OFFICE_ROLES = [
+  // ⚠️ Chairman, Vice Chairman, Secretary, ADS, LO — appointment only via Master
   { title:"Confidential Secretary",    role:"conf_secretary",  dept:"admin"     },
   { title:"Personnel Officer",         role:"personnel",       dept:"admin"     },
   { title:"Accountant",                role:"accountant",      dept:"finance"   },
@@ -208,6 +218,25 @@ const OFFICE_ROLES = [
   { title:"Lecturer",                  role:"lecturer",        dept:"jets"      },
   { title:"Cleaner / Security",        role:"support",         dept:"admin"     },
 ];
+
+// Custom roles added by master — stored in Supabase as "customRoles"
+// Shape: [{ title:"Transport Officer", dept:"admin", addedOn:"2026-03-08" }]
+// They all get role:"custom_staff" (staff-level permissions only)
+let _customRoles = [];
+function setCustomRolesCache(r){ _customRoles = r||[]; }
+function getCustomRoles(){ return _customRoles; }
+function getAllOfficeRoles(){
+  const customs = _customRoles.map(r=>({ title:r.title, role:"custom_staff", dept:r.dept||"admin", custom:true }));
+  return [...BUILTIN_OFFICE_ROLES, ...customs];
+}
+// Alias for backward compat
+const OFFICE_ROLES = BUILTIN_OFFICE_ROLES;
+
+// Display names for appointed roles
+const APPT_ROLE_LABELS = {
+  chairman:"Chairman", vice_chairman:"Vice Chairman",
+  secretary:"Secretary", ads:"ADS (Asst. DCC Secretary)", lo:"Lay Officer (LO)"
+};
 
 // Number to words for finance forms — returns e.g. "Eighty Thousand Only"
 function nairaToWords(amount) {
@@ -2175,7 +2204,7 @@ function StaffProf({ staff, user, users, canEdit, canEditDetails, lccs, onClose,
                 <div><label>Date of Birth</label><input type="date" value={form.dob} onChange={sf("dob")}/></div>
                 <div><label>Date of Employment</label><input type="date" value={form.doj} onChange={sf("doj")} disabled={isSelfEdit} style={isSelfEdit?{background:"#f0f0f0",color:"#aaa"}:{}} /></div>
                 {staff.category==="office"&&canEditDetails&&<div><label>Department</label><select value={form.dept} onChange={sf("dept")}><option value="">— Select —</option>{DEPARTMENTS.map(d=><option key={d.id} value={d.id}>{d.label}</option>)}</select></div>}
-                {staff.category==="office"&&canEditDetails&&<div><label>Job Title</label><select value={form.jobTitle} onChange={sf("jobTitle")}><option value="">— Select —</option>{OFFICE_ROLES.map(r=><option key={r.role} value={r.title}>{r.title}</option>)}</select></div>}
+                {staff.category==="office"&&canEditDetails&&<div><label>Job Title</label><select value={form.jobTitle} onChange={sf("jobTitle")}><option value="">— Select —</option>{getAllOfficeRoles().map(r=><option key={r.title} value={r.title}>{r.title}{r.custom?" ✦":""}</option>)}</select></div>}
                 {staff.category==="pastor"&&<>
                   <div><label>Rank</label><select value={form.rank} onChange={sf("rank")} disabled={isSelfEdit} style={isSelfEdit?{background:"#f0f0f0",color:"#aaa"}:{}}><option value="">— Select —</option>{PASTOR_RANKS.map(r=><option key={r} value={r}>{r}</option>)}</select></div>
                   <div><label>LCC</label><select value={form.lcc} onChange={sf("lcc")} disabled={isSelfEdit} style={isSelfEdit?{background:"#f0f0f0",color:"#aaa"}:{}}><option value="">— Select —</option>{lccs.map(l=><option key={l} value={l}>{l} LCC</option>)}</select></div>
@@ -3216,7 +3245,10 @@ function SignUp({ users, lccs, setLccs, onSignUp, onGo }) {
   const sigUploadRef=useRef(null); const errRef=useRef(null);
   const s=k=>e=>setF(p=>({...p,[k]:e.target.value}));
   const showErr=(msg)=>{setEr(msg);setTimeout(()=>errRef.current?.scrollIntoView({behavior:"smooth",block:"center"}),50);};
-  const deptRoles = f.dept ? OFFICE_ROLES.filter(r=>r.dept===f.dept) : OFFICE_ROLES;
+  const ALL_ROLES  = getAllOfficeRoles();
+  const deptRoles  = f.dept ? ALL_ROLES.filter(r=>r.dept===f.dept) : ALL_ROLES;
+  // Make custom dept roles available under their dept id
+  // (custom roles already carry the dept id, so filter works automatically)
 
   const go=async ()=>{
     showErr("");
@@ -3237,7 +3269,7 @@ function SignUp({ users, lccs, setLccs, onSignUp, onGo }) {
       if(cat==="pastor"&&f.newLcc&&!lccs.includes(f.newLcc)){setLccs(l=>[...l,f.newLcc]);}
       const finalLcc=cat==="pastor"?(f.lcc==="__new__"?f.newLcc:f.lcc):undefined;
       const finalLcPh=cat==="pastor"?(f.lc_ph==="__other__"?f.newLcPh:f.lc_ph):undefined;
-      const roleObj = OFFICE_ROLES.find(r=>r.title===f.jobTitle);
+      const roleObj = getAllOfficeRoles().find(r=>r.title===f.jobTitle);
       const role = cat==="pastor"?"pastor":(roleObj?.role||"staff");
       const hashedPw = await hashPassword(f.pw);
       onSignUp({
@@ -3280,7 +3312,7 @@ function SignUp({ users, lccs, setLccs, onSignUp, onGo }) {
       {step===1&&(
         <div style={{display:"flex",flexDirection:"column",gap:12}}>
           <p style={{color:"rgba(255,255,255,0.6)",fontSize:13,marginBottom:4}}>I am a...</p>
-          {[{id:"office",icon:"🏢",label:"Office Staff",desc:"Chairman, Secretary, ADS, Accountant, Auditor, Cashier, EMS Coordinator, etc."},
+          {[{id:"office",icon:"🏢",label:"Office Staff",desc:"Accountant, Auditor, Cashier, Conf. Secretary, Personnel, EMS Coordinator, etc."},
             {id:"pastor",icon:"⛪",label:"Pastor",desc:"Church Planter, Unlicensed, Licensed Pastor or Reverend"},
           ].map(c=>(
             <button key={c.id} className={`cat-btn ${cat===c.id?"active":""}`} onClick={()=>setCat(c.id)}>
@@ -3311,8 +3343,7 @@ function SignUp({ users, lccs, setLccs, onSignUp, onGo }) {
             <div><label style={{color:"rgba(255,255,255,0.5)"}}>Department *</label>
               <select value={f.dept} onChange={e=>setF(p=>({...p,dept:e.target.value,jobTitle:""}))}>
                 <option value="">— Select department first —</option>
-                {DEPARTMENTS.filter(d=>d.id!=="executive").map(d=><option key={d.id} value={d.id}>{d.label}</option>)}
-                <option value="executive">Executive (Chairman / Vice Chairman)</option>
+                {getAllDepartments().filter(d=>d.id!=="executive").map(d=><option key={d.id} value={d.id}>{d.label}{d.custom?" ✦":""}</option>)}
               </select>
             </div>
             <div><label style={{color:"rgba(255,255,255,0.5)"}}>Job Title *</label>
@@ -3473,7 +3504,7 @@ function SignIn({ users, setUsers, onLogin, onGo, pwdReqs, setPwdReqs }) {
 function MasterPanel({ user, users, setUsers, requests, setRequests, leaves, setLeaves,
   sundayReports, setSundayReports, announcements, setAnnouncements, lccs, setLccs,
   attendance, setAttendance, banner, setBanner, maintMode, setMaintMode, maintMsg, setMaintMsg,
-  pwdReqs, setPwdReqs, toast, onLogout }) {
+  pwdReqs, setPwdReqs, customRoles, setCustomRoles, customDepts, setCustomDepts, toast, onLogout }) {
 
   const [section, setSection] = useState("dashboard");
   const [auditLog, setAuditLog] = useState(() => {
@@ -3490,14 +3521,16 @@ function MasterPanel({ user, users, setUsers, requests, setRequests, leaves, set
   };
 
   const sections = [
-    { id:"dashboard",  icon:"📊", label:"Overview"        },
-    { id:"impersonate",icon:"🎭", label:"Act As Staff"     },
-    { id:"records",    icon:"⚙️", label:"Edit Records"     },
-    { id:"staff",      icon:"👥", label:"Staff Control"    },
-    { id:"lcc",        icon:"🏛️", label:"LCC Management"   },
-    { id:"announce",   icon:"📢", label:"Announcements"    },
-    { id:"maint",      icon:"🔧", label:"Maintenance"      },
-    { id:"audit",      icon:"🕵️", label:"Audit Log"        },
+    { id:"dashboard",    icon:"📊", label:"Overview"        },
+    { id:"appointments", icon:"👑", label:"Appointments"    },
+    { id:"impersonate",  icon:"🎭", label:"Act As Staff"    },
+    { id:"records",      icon:"⚙️", label:"Edit Records"    },
+    { id:"staff",        icon:"👥", label:"Staff Control"   },
+    { id:"roles",        icon:"🗂️", label:"Roles & Depts"   },
+    { id:"lcc",          icon:"🏛️", label:"LCC Management"  },
+    { id:"announce",     icon:"📢", label:"Announcements"   },
+    { id:"maint",        icon:"🔧", label:"Maintenance"     },
+    { id:"audit",        icon:"🕵️", label:"Audit Log"       },
   ];
 
   return (
@@ -3529,7 +3562,9 @@ function MasterPanel({ user, users, setUsers, requests, setRequests, leaves, set
           {section==="dashboard"  && <MasterDashboard users={users} requests={requests} leaves={leaves} sundayReports={sundayReports} announcements={announcements} attendance={attendance}/>}
           {section==="impersonate"&& <MasterImpersonate users={users} requests={requests} setRequests={setRequests} leaves={leaves} setLeaves={setLeaves} sundayReports={sundayReports} setSundayReports={setSundayReports} lccs={lccs} toast={toast} addLog={addLog}/>}
           {section==="records"    && <MasterRecords requests={requests} setRequests={setRequests} leaves={leaves} setLeaves={setLeaves} sundayReports={sundayReports} setSundayReports={setSundayReports} users={users} toast={toast} addLog={addLog}/>}
+          {section==="appointments"&& <MasterAppointments users={users} setUsers={setUsers} toast={toast} addLog={addLog}/>}
           {section==="staff"      && <MasterStaff users={users} setUsers={setUsers} toast={toast} addLog={addLog}/>}
+          {section==="roles"      && <MasterCustomRoles customRoles={customRoles} setCustomRoles={setCustomRoles} customDepts={customDepts} setCustomDepts={setCustomDepts} users={users} toast={toast} addLog={addLog}/>}
           {section==="lcc"        && <MasterLCC lccs={lccs} setLccs={setLccs} users={users} setUsers={setUsers} toast={toast} addLog={addLog}/>}
           {section==="announce"   && <MasterAnnounce announcements={announcements} setAnnouncements={setAnnouncements} users={users} banner={banner} setBanner={setBanner} toast={toast} addLog={addLog}/>}
           {section==="maint"      && <MasterMaint maintMode={maintMode} setMaintMode={setMaintMode} maintMsg={maintMsg} setMaintMsg={setMaintMsg} toast={toast} addLog={addLog}/>}
@@ -4035,6 +4070,390 @@ function MasterRecords({ requests, setRequests, leaves, setLeaves, sundayReports
   );
 }
 
+
+// ── Master Appointments — Assign/Revert Chairman, VC, Secretary, ADS, LO ─────
+function MasterAppointments({ users, setUsers, toast, addLog }) {
+  const [confirming, setConfirming] = useState(null); // { pastor, role }
+  const [newPw, setNewPw]           = useState(null);  // generated temp password shown to master
+  const [filter, setFilter]         = useState("");
+
+  const APPT_POSITIONS = [
+    { role:"chairman",     label:"Chairman",                icon:"👑", color:"#c9a84c" },
+    { role:"vice_chairman",label:"Vice Chairman",            icon:"🎖️", color:"#e67e22" },
+    { role:"secretary",    label:"Secretary",                icon:"📋", color:"#2980b9" },
+    { role:"ads",          label:"ADS",                      icon:"📌", color:"#8e44ad" },
+    { role:"lo",           label:"Lay Officer (LO)",         icon:"🤝", color:"#27ae60" },
+  ];
+
+  // Current holders
+  const currentHolders = {};
+  APPT_POSITIONS.forEach(p => {
+    currentHolders[p.role] = users.find(u => u.role === p.role);
+  });
+
+  // Pastors eligible to be appointed (category pastor, not currently holding an appt role)
+  const eligiblePastors = users.filter(u =>
+    (u.category === "pastor" || u.originalRole === "pastor") &&
+    !APPT_POSITIONS.find(p => p.role === u.role)
+  ).filter(u =>
+    !filter || u.name?.toLowerCase().includes(filter.toLowerCase()) || u.lc_ph?.toLowerCase().includes(filter.toLowerCase())
+  );
+
+  // Generate a temp password
+  const genPassword = () => {
+    const chars = "ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
+    let pw = "ECWA@";
+    for(let i=0;i<6;i++) pw += chars[Math.floor(Math.random()*chars.length)];
+    return pw;
+  };
+
+  const appoint = async (pastor, position) => {
+    // If position already filled, revert the current holder first
+    const current = currentHolders[position.role];
+    const tempPw  = genPassword();
+    const hashed  = await hashPassword(tempPw);
+
+    setUsers(us => us.map(u => {
+      // Revert old holder back to pastor
+      if(current && u.id === current.id) {
+        return { ...u, role:"pastor", category:"pastor", mustChangePassword:false,
+          appointmentHistory:[...(u.appointmentHistory||[]),
+            { role:current.role, from:u.appointedOn||"—", to:new Date().toISOString().split("T")[0], revertedBy:"master" }
+          ], appointedOn:null
+        };
+      }
+      // Appoint new person
+      if(u.id === pastor.id) {
+        return { ...u, role:position.role, category:"office",
+          originalRole:"pastor", originalLcPh:u.lc_ph, originalLcc:u.lcc,
+          password:hashed, mustChangePassword:true,
+          appointedOn:new Date().toISOString().split("T")[0],
+          appointedBy:"master",
+          appointmentHistory:[...(u.appointmentHistory||[]),
+            { role:position.role, from:new Date().toISOString().split("T")[0], to:null, appointedBy:"master" }
+          ]
+        };
+      }
+      return u;
+    }));
+
+    addLog("APPOINT", `Appointed ${pastor.name} as ${position.label}${current ? ` (replaced ${current.name})` : ""}`);
+    setNewPw({ name:pastor.name, role:position.label, pw:tempPw });
+    setConfirming(null);
+    toast(`✅ ${pastor.name} appointed as ${position.label}`);
+  };
+
+  const revert = (holder) => {
+    setUsers(us => us.map(u => {
+      if(u.id !== holder.id) return u;
+      return { ...u, role:"pastor", category:"pastor",
+        appointmentHistory:[...(u.appointmentHistory||[]),
+          { role:holder.role, from:u.appointedOn||"—", to:new Date().toISOString().split("T")[0], revertedBy:"master" }
+        ], appointedOn:null, mustChangePassword:false
+      };
+    }));
+    addLog("REVERT", `Reverted ${holder.name} from ${holder.role} back to Pastor`);
+    toast(`✅ ${holder.name} reverted to Pastor`);
+  };
+
+  return (
+    <div>
+      <div style={{fontFamily:"Georgia,serif",color:"#c9a84c",fontSize:20,marginBottom:6}}>👑 Appointments</div>
+      <div style={{fontSize:12,color:"rgba(255,255,255,0.4)",marginBottom:20}}>
+        Appoint pastors to leadership positions. They keep Sunday report access. Only master can assign or revert.
+      </div>
+
+      {/* Temp password display */}
+      {newPw&&(
+        <div style={{background:"rgba(39,174,96,0.12)",border:"2px solid rgba(39,174,96,0.5)",borderRadius:12,padding:18,marginBottom:20}}>
+          <div style={{color:"#27ae60",fontWeight:700,fontSize:14,marginBottom:8}}>✅ {newPw.name} appointed as {newPw.role}</div>
+          <div style={{fontSize:12,color:"rgba(255,255,255,0.6)",marginBottom:10}}>Temporary password — copy and hand to them. They must change on first login:</div>
+          <div style={{background:"#0a0a0a",borderRadius:8,padding:"12px 16px",fontFamily:"monospace",fontSize:18,color:"#c9a84c",letterSpacing:2,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <span>{newPw.pw}</span>
+            <button onClick={()=>{navigator.clipboard?.writeText(newPw.pw);toast("Copied!");}} style={{background:"rgba(201,168,76,0.2)",border:"1px solid rgba(201,168,76,0.4)",color:"#c9a84c",borderRadius:6,padding:"4px 12px",cursor:"pointer",fontSize:11}}>📋 Copy</button>
+          </div>
+          <button onClick={()=>setNewPw(null)} style={{marginTop:10,background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.15)",color:"rgba(255,255,255,0.5)",borderRadius:6,padding:"4px 14px",cursor:"pointer",fontSize:11}}>Dismiss</button>
+        </div>
+      )}
+
+      {/* Current positions */}
+      <div style={{marginBottom:24}}>
+        <div style={{color:"rgba(255,255,255,0.7)",fontWeight:700,fontSize:13,marginBottom:12}}>Current Leadership Positions</div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",gap:10}}>
+          {APPT_POSITIONS.map(pos => {
+            const holder = currentHolders[pos.role];
+            return (
+              <div key={pos.role} style={{background:"rgba(255,255,255,0.04)",border:`1px solid ${holder?"rgba(201,168,76,0.3)":"rgba(255,255,255,0.08)"}`,borderRadius:10,padding:"12px 14px"}}>
+                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+                  <span style={{fontSize:18}}>{pos.icon}</span>
+                  <div style={{fontSize:12,color:pos.color,fontWeight:700}}>{pos.label}</div>
+                </div>
+                {holder?(
+                  <>
+                    <div style={{fontSize:13,color:"#fff",fontWeight:600}}>{holder.name}</div>
+                    <div style={{fontSize:11,color:"rgba(255,255,255,0.4)",marginTop:2}}>{holder.originalLcPh||holder.lc_ph||"—"}</div>
+                    <div style={{fontSize:10,color:"rgba(255,255,255,0.3)",marginTop:2}}>Since {fdate(holder.appointedOn)}</div>
+                    <button onClick={()=>revert(holder)} style={{marginTop:8,background:"rgba(192,57,43,0.15)",border:"1px solid rgba(192,57,43,0.3)",color:"#e74c3c",borderRadius:6,padding:"4px 10px",cursor:"pointer",fontSize:11,width:"100%"}}>↩ Revert to Pastor</button>
+                  </>
+                ):(
+                  <div style={{fontSize:12,color:"rgba(255,255,255,0.25)",fontStyle:"italic"}}>Vacant</div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Confirm appointment */}
+      {confirming&&(
+        <div style={{background:"rgba(201,168,76,0.08)",border:"2px solid rgba(201,168,76,0.4)",borderRadius:12,padding:18,marginBottom:20}}>
+          <div style={{color:"#c9a84c",fontWeight:700,fontSize:14,marginBottom:8}}>
+            👑 Appoint {confirming.pastor.name} as {confirming.position.label}?
+          </div>
+          {currentHolders[confirming.position.role]&&(
+            <div style={{fontSize:12,color:"#e67e22",marginBottom:10,background:"rgba(230,126,34,0.1)",borderRadius:6,padding:"6px 10px"}}>
+              ⚠️ {currentHolders[confirming.position.role].name} currently holds this position and will be automatically reverted to Pastor.
+            </div>
+          )}
+          <div style={{fontSize:12,color:"rgba(255,255,255,0.5)",marginBottom:14}}>
+            A temporary password will be generated. They must change it on first login. They will retain Sunday report access for their LC ({confirming.pastor.lc_ph||"—"}).
+          </div>
+          <div style={{display:"flex",gap:10}}>
+            <button onClick={()=>setConfirming(null)} style={{background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.15)",color:"#fff",borderRadius:8,padding:"7px 16px",cursor:"pointer",fontSize:12}}>Cancel</button>
+            <button onClick={()=>appoint(confirming.pastor,confirming.position)} style={{background:"#c9a84c",border:"none",color:"#0b1f3a",borderRadius:8,padding:"7px 20px",cursor:"pointer",fontWeight:700,fontSize:12}}>✅ Confirm Appointment →</button>
+          </div>
+        </div>
+      )}
+
+      {/* Pastor list to appoint */}
+      <div>
+        <div style={{color:"rgba(255,255,255,0.7)",fontWeight:700,fontSize:13,marginBottom:10}}>Appoint a Pastor</div>
+        <input value={filter} onChange={e=>setFilter(e.target.value)} placeholder="Search by name or LC..." style={{background:"#1a1a2e",color:"#fff",border:"1px solid rgba(255,255,255,0.2)",borderRadius:8,padding:"8px 12px",width:"100%",boxSizing:"border-box",fontSize:13,marginBottom:12}}/>
+        {eligiblePastors.length===0&&<div style={{color:"rgba(255,255,255,0.3)",fontSize:12,textAlign:"center",padding:16}}>No eligible pastors found.</div>}
+        {eligiblePastors.map(p=>(
+          <div key={p.id} style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:10,padding:"12px 14px",marginBottom:8,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8}}>
+            <div>
+              <div style={{color:"#fff",fontWeight:600,fontSize:13}}>{p.name}</div>
+              <div style={{fontSize:11,color:"rgba(255,255,255,0.4)",marginTop:2}}>{p.lc_ph||"—"} · {p.lcc||"—"} · {p.rank||"Pastor"}</div>
+            </div>
+            <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+              {APPT_POSITIONS.map(pos=>(
+                <button key={pos.role} onClick={()=>setConfirming({pastor:p,position:pos})}
+                  style={{background:`rgba(${pos.role==="chairman"?"201,168,76":pos.role==="vice_chairman"?"230,126,34":pos.role==="secretary"?"41,128,185":pos.role==="ads"?"142,68,173":"39,174,96"},0.15)`,
+                  border:`1px solid rgba(${pos.role==="chairman"?"201,168,76":pos.role==="vice_chairman"?"230,126,34":pos.role==="secretary"?"41,128,185":pos.role==="ads"?"142,68,173":"39,174,96"},0.4)`,
+                  color:pos.color,borderRadius:6,padding:"3px 8px",cursor:"pointer",fontSize:10,fontWeight:600}}>
+                  {pos.icon} {pos.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+
+// ── Master Custom Roles — Add new job titles ──────────────────────────────────
+function MasterCustomRoles({ customRoles, setCustomRoles, customDepts, setCustomDepts, users, toast, addLog }) {
+  const [tab,       setTab]       = useState("depts");
+  const [roleTitle, setRoleTitle] = useState("");
+  const [roleDept,  setRoleDept]  = useState("");
+  const [deptLabel, setDeptLabel] = useState("");
+  const [editRole,  setEditRole]  = useState(null);
+  const [editDept,  setEditDept]  = useState(null);
+
+  const inp = { background:"#1a1a2e", color:"#fff", border:"1px solid rgba(255,255,255,0.2)", borderRadius:8, padding:"8px 12px", fontSize:13 };
+  const allDepts = getAllDepartments();
+
+  const addDept = () => {
+    const label = deptLabel.trim();
+    if(!label){ toast("Please enter a department name","danger"); return; }
+    if(allDepts.find(d=>d.label.toLowerCase()===label.toLowerCase())){ toast("Department already exists","danger"); return; }
+    const id = "custom_"+label.toLowerCase().replace(/\s+/g,"_").replace(/[^a-z0-9_]/g,"");
+    const updated = [...customDepts, { id, label, custom:true, addedOn:today() }];
+    setCustomDepts(updated); setCustomDeptsCache(updated);
+    addLog("ADD_DEPT", `Added department: ${label}`);
+    toast(`✅ "${label}" department added.`);
+    setDeptLabel("");
+  };
+
+  const saveDeptEdit = () => {
+    const label = editDept.label.trim();
+    if(!label){ toast("Name cannot be empty","danger"); return; }
+    const updated = customDepts.map((d,i)=>i===editDept.idx?{...d,label}:d);
+    setCustomDepts(updated); setCustomDeptsCache(updated);
+    addLog("EDIT_DEPT", `Renamed department to: ${label}`);
+    toast(`✅ Renamed to "${label}"`); setEditDept(null);
+  };
+
+  const deleteDept = (idx) => {
+    const dept = customDepts[idx];
+    const inUse = users.filter(u=>u.dept===dept.id).length;
+    if(inUse>0&&!window.confirm(`${inUse} staff in this department. Delete anyway?`)) return;
+    const updated = customDepts.filter((_,i)=>i!==idx);
+    setCustomDepts(updated); setCustomDeptsCache(updated);
+    addLog("DELETE_DEPT", `Deleted department: ${dept.label}`);
+    toast(`🗑️ "${dept.label}" removed.`);
+  };
+
+  const addRole = () => {
+    const t = roleTitle.trim();
+    if(!t){ toast("Please enter a job title","danger"); return; }
+    if(!roleDept){ toast("Please select a department","danger"); return; }
+    const allTitles = [...BUILTIN_OFFICE_ROLES.map(r=>r.title.toLowerCase()), ...customRoles.map(r=>r.title.toLowerCase())];
+    if(allTitles.includes(t.toLowerCase())){ toast("Title already exists","danger"); return; }
+    setCustomRoles(r=>[...r,{ title:t, dept:roleDept, addedOn:today() }]);
+    addLog("ADD_CUSTOM_ROLE", `Added role: ${t}`);
+    toast(`✅ "${t}" added.`);
+    setRoleTitle(""); setRoleDept("");
+  };
+
+  const saveRoleEdit = () => {
+    const t = editRole.title.trim();
+    if(!t){ toast("Title cannot be empty","danger"); return; }
+    setCustomRoles(rs=>rs.map((r,i)=>i===editRole.idx?{...r,title:t,dept:editRole.dept}:r));
+    addLog("EDIT_CUSTOM_ROLE", `Renamed role to: ${t}`);
+    toast(`✅ Role updated to "${t}"`); setEditRole(null);
+  };
+
+  const deleteRole = (idx) => {
+    const role = customRoles[idx];
+    const inUse = users.filter(u=>u.jobTitle===role.title).length;
+    if(inUse>0&&!window.confirm(`${inUse} staff have this title. Delete anyway?`)) return;
+    setCustomRoles(rs=>rs.filter((_,i)=>i!==idx));
+    addLog("DELETE_CUSTOM_ROLE", `Deleted role: ${role.title}`);
+    toast(`🗑️ "${role.title}" removed.`);
+  };
+
+  const tabS = t => ({ padding:"8px 18px", border:"none", borderBottom:tab===t?"2px solid #c9a84c":"2px solid transparent", background:"none", color:tab===t?"#c9a84c":"rgba(255,255,255,0.4)", cursor:"pointer", fontSize:13, fontWeight:tab===t?700:400 });
+
+  return (
+    <div>
+      <div style={{fontFamily:"Georgia,serif",color:"#c9a84c",fontSize:20,marginBottom:6}}>🗂️ Roles & Departments</div>
+      <div style={{fontSize:12,color:"rgba(255,255,255,0.4)",marginBottom:16}}>
+        Add new departments and job titles. Custom roles get staff-level permissions — submit leave and finance only.
+      </div>
+
+      {/* Tabs */}
+      <div style={{display:"flex",borderBottom:"1px solid rgba(255,255,255,0.08)",marginBottom:20}}>
+        <button style={tabS("depts")} onClick={()=>setTab("depts")}>🏢 Departments ({BUILTIN_DEPARTMENTS.length + customDepts.length})</button>
+        <button style={tabS("roles")} onClick={()=>setTab("roles")}>👔 Job Titles ({BUILTIN_OFFICE_ROLES.length + customRoles.length})</button>
+      </div>
+
+      {/* ── DEPARTMENTS TAB ─────────────────────────────────── */}
+      {tab==="depts"&&(
+        <div>
+          {/* Add new */}
+          <div style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(201,168,76,0.2)",borderRadius:12,padding:16,marginBottom:20}}>
+            <div style={{color:"#c9a84c",fontWeight:700,fontSize:13,marginBottom:12}}>+ Add New Department</div>
+            <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+              <input value={deptLabel} onChange={e=>setDeptLabel(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addDept()}
+                placeholder="e.g. Media & Communications" style={{...inp,flex:1,minWidth:180,boxSizing:"border-box"}}/>
+              <button onClick={addDept} style={{background:"#c9a84c",border:"none",color:"#0b1f3a",borderRadius:8,padding:"8px 20px",cursor:"pointer",fontWeight:700,fontSize:13,flexShrink:0}}>+ Add</button>
+            </div>
+          </div>
+
+          {/* Built-in depts */}
+          <div style={{color:"rgba(255,255,255,0.4)",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:0.5,marginBottom:8}}>Built-in Departments</div>
+          {BUILTIN_DEPARTMENTS.filter(d=>d.id!=="executive").map(d=>(
+            <div key={d.id} style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:8,padding:"10px 14px",marginBottom:6,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <div><div style={{fontSize:13,color:"rgba(255,255,255,0.6)",fontWeight:600}}>{d.label}</div><div style={{fontSize:10,color:"rgba(255,255,255,0.25)",marginTop:2}}>{users.filter(u=>u.dept===d.id).length} staff</div></div>
+              <span style={{fontSize:10,color:"rgba(255,255,255,0.2)",fontStyle:"italic"}}>built-in</span>
+            </div>
+          ))}
+
+          {/* Custom depts */}
+          <div style={{color:"rgba(255,255,255,0.4)",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:0.5,margin:"16px 0 8px"}}>Custom Departments ({customDepts.length})</div>
+          {customDepts.length===0&&<div style={{textAlign:"center",color:"rgba(255,255,255,0.2)",fontSize:12,padding:"16px 0"}}>No custom departments yet.</div>}
+          {customDepts.map((d,idx)=>editDept?.idx===idx?(
+            <div key={idx} style={{background:"rgba(201,168,76,0.08)",border:"1px solid rgba(201,168,76,0.3)",borderRadius:10,padding:"12px 14px",marginBottom:8}}>
+              <div style={{display:"flex",gap:10,marginBottom:8,flexWrap:"wrap"}}>
+                <input value={editDept.label} onChange={e=>setEditDept(p=>({...p,label:e.target.value}))} style={{...inp,flex:1,boxSizing:"border-box"}}/>
+              </div>
+              <div style={{display:"flex",gap:8}}>
+                <button onClick={()=>setEditDept(null)} style={{background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.15)",color:"#fff",borderRadius:6,padding:"5px 12px",cursor:"pointer",fontSize:12}}>Cancel</button>
+                <button onClick={saveDeptEdit} style={{background:"#c9a84c",border:"none",color:"#0b1f3a",borderRadius:6,padding:"5px 14px",cursor:"pointer",fontWeight:700,fontSize:12}}>Save →</button>
+              </div>
+            </div>
+          ):(
+            <div key={idx} style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:10,padding:"10px 14px",marginBottom:8,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8}}>
+              <div>
+                <div style={{fontSize:13,color:"#fff",fontWeight:600}}>{d.label} <span style={{color:"#c9a84c",fontSize:10}}>✦ Custom</span></div>
+                <div style={{fontSize:11,color:"rgba(255,255,255,0.4)",marginTop:2}}>Added {fdate(d.addedOn)} · {users.filter(u=>u.dept===d.id).length} staff</div>
+              </div>
+              <div style={{display:"flex",gap:6}}>
+                <button onClick={()=>setEditDept({idx,label:d.label})} style={{background:"rgba(201,168,76,0.15)",border:"1px solid rgba(201,168,76,0.3)",color:"#c9a84c",borderRadius:6,padding:"4px 10px",cursor:"pointer",fontSize:11}}>✏️ Edit</button>
+                <button onClick={()=>deleteDept(idx)} style={{background:"rgba(192,57,43,0.15)",border:"1px solid rgba(192,57,43,0.3)",color:"#e74c3c",borderRadius:6,padding:"4px 10px",cursor:"pointer",fontSize:11}}>🗑️</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ── ROLES TAB ───────────────────────────────────────── */}
+      {tab==="roles"&&(
+        <div>
+          {/* Add new */}
+          <div style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(201,168,76,0.2)",borderRadius:12,padding:16,marginBottom:20}}>
+            <div style={{color:"#c9a84c",fontWeight:700,fontSize:13,marginBottom:12}}>+ Add New Job Title</div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr auto",gap:10,flexWrap:"wrap"}}>
+              <input value={roleTitle} onChange={e=>setRoleTitle(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addRole()}
+                placeholder="e.g. Transport Officer" style={{...inp,boxSizing:"border-box"}}/>
+              <select value={roleDept} onChange={e=>setRoleDept(e.target.value)} style={{...inp}}>
+                <option value="">— Select Department —</option>
+                {getAllDepartments().filter(d=>d.id!=="executive").map(d=><option key={d.id} value={d.id}>{d.label}{d.custom?" ✦":""}</option>)}
+              </select>
+              <button onClick={addRole} style={{background:"#c9a84c",border:"none",color:"#0b1f3a",borderRadius:8,padding:"8px 18px",cursor:"pointer",fontWeight:700,fontSize:13}}>+ Add</button>
+            </div>
+            <div style={{fontSize:11,color:"rgba(255,255,255,0.25)",marginTop:8}}>✦ Custom roles get staff-level permissions only — submit leave and finance, no approvals.</div>
+          </div>
+
+          {/* Built-in roles */}
+          <div style={{color:"rgba(255,255,255,0.4)",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:0.5,marginBottom:8}}>Built-in Job Titles</div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",gap:6,marginBottom:16}}>
+            {BUILTIN_OFFICE_ROLES.map(r=>(
+              <div key={r.role} style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:8,padding:"8px 12px"}}>
+                <div style={{fontSize:12,color:"rgba(255,255,255,0.6)",fontWeight:600}}>{r.title}</div>
+                <div style={{fontSize:10,color:"rgba(255,255,255,0.25)",marginTop:2}}>{getAllDepartments().find(d=>d.id===r.dept)?.label||r.dept}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Custom roles */}
+          <div style={{color:"rgba(255,255,255,0.4)",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:0.5,marginBottom:8}}>Custom Job Titles ({customRoles.length})</div>
+          {customRoles.length===0&&<div style={{textAlign:"center",color:"rgba(255,255,255,0.2)",fontSize:12,padding:"16px 0"}}>No custom titles yet.</div>}
+          {customRoles.map((r,idx)=>editRole?.idx===idx?(
+            <div key={idx} style={{background:"rgba(201,168,76,0.08)",border:"1px solid rgba(201,168,76,0.3)",borderRadius:10,padding:"12px 14px",marginBottom:8}}>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:8}}>
+                <input value={editRole.title} onChange={e=>setEditRole(p=>({...p,title:e.target.value}))} style={{...inp,boxSizing:"border-box"}}/>
+                <select value={editRole.dept} onChange={e=>setEditRole(p=>({...p,dept:e.target.value}))} style={{...inp}}>
+                  {getAllDepartments().filter(d=>d.id!=="executive").map(d=><option key={d.id} value={d.id}>{d.label}{d.custom?" ✦":""}</option>)}
+                </select>
+              </div>
+              <div style={{display:"flex",gap:8}}>
+                <button onClick={()=>setEditRole(null)} style={{background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.15)",color:"#fff",borderRadius:6,padding:"5px 12px",cursor:"pointer",fontSize:12}}>Cancel</button>
+                <button onClick={saveRoleEdit} style={{background:"#c9a84c",border:"none",color:"#0b1f3a",borderRadius:6,padding:"5px 14px",cursor:"pointer",fontWeight:700,fontSize:12}}>Save →</button>
+              </div>
+            </div>
+          ):(
+            <div key={idx} style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:10,padding:"10px 14px",marginBottom:8,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8}}>
+              <div>
+                <div style={{fontSize:13,color:"#fff",fontWeight:600}}>{r.title} <span style={{color:"#c9a84c",fontSize:10}}>✦ Custom</span></div>
+                <div style={{fontSize:11,color:"rgba(255,255,255,0.4)",marginTop:2}}>{getAllDepartments().find(d=>d.id===r.dept)?.label||r.dept} · Added {fdate(r.addedOn)} · {users.filter(u=>u.jobTitle===r.title).length} staff</div>
+              </div>
+              <div style={{display:"flex",gap:6}}>
+                <button onClick={()=>setEditRole({idx,title:r.title,dept:r.dept})} style={{background:"rgba(201,168,76,0.15)",border:"1px solid rgba(201,168,76,0.3)",color:"#c9a84c",borderRadius:6,padding:"4px 10px",cursor:"pointer",fontSize:11}}>✏️ Edit</button>
+                <button onClick={()=>deleteRole(idx)} style={{background:"rgba(192,57,43,0.15)",border:"1px solid rgba(192,57,43,0.3)",color:"#e74c3c",borderRadius:6,padding:"4px 10px",cursor:"pointer",fontSize:11}}>🗑️</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Master Staff Control ───────────────────────────────────────────────────────
 function MasterStaff({ users, setUsers, toast, addLog }) {
   const [sel, setSel]     = useState(null);
@@ -4078,7 +4497,8 @@ function MasterStaff({ users, setUsers, toast, addLog }) {
     setShowReset(false); setResetPw("");
   };
 
-  const ROLES = ["cashier","accountant","auditor","secretary","ads","conf_secretary","chairman","vice_chairman","personnel","pastor","lo"];
+  // Appointment roles (chairman, vice_chairman, secretary, ads, lo) managed via Appointments tab
+  const ROLES = ["cashier","accountant","auditor","conf_secretary","personnel","pastor","ems_coordinator","lecturer","support"];
 
   return (
     <div>
@@ -4586,7 +5006,9 @@ export default function App() {
   const [attendance,setAttendance] = useState(ATTENDANCE0);
   const [announcements,setAnnouncements] = useState(ANNOUNCEMENTS0);
   const [pwdReqs,setPwdReqs] = useState(PWD_REQS0);
-  const [lccs,setLccs]     = useState(LCCS_DEFAULT);
+  const [lccs,setLccs]         = useState(LCCS_DEFAULT);
+  const [customRoles,setCustomRoles] = useState([]);
+  const [customDepts,setCustomDepts] = useState([]);
   const [me,setMe]         = useState(null);
   const [scr,setScr]       = useState("login");
   // Emergency banner + maintenance mode — stored in Supabase so all devices see same value
@@ -4610,6 +5032,8 @@ export default function App() {
           if (map.announcements) setAnnouncements(map.announcements);
           if (map.pwdReqs)       setPwdReqs(map.pwdReqs);
           if (map.lccs)          setLccs(map.lccs);
+          if (map.customRoles)   { setCustomRoles(map.customRoles); setCustomRolesCache(map.customRoles); }
+          if (map.customDepts)   { setCustomDepts(map.customDepts); setCustomDeptsCache(map.customDepts); }
           if ("banner" in map)          setBanner(map.banner);
           if ("maintMode" in map)        setMaintMode(map.maintMode);
           if (map.maintMsg)              setMaintMsg(map.maintMsg);
@@ -4629,6 +5053,8 @@ export default function App() {
   useEffect(() => { if(!loading) sbSave("announcements", announcements); }, [announcements, loading]);
   useEffect(() => { if(!loading) sbSave("pwdReqs", pwdReqs); }, [pwdReqs, loading]);
   useEffect(() => { if(!loading) sbSave("lccs", lccs); }, [lccs, loading]);
+  useEffect(() => { if(!loading){ sbSave("customRoles", customRoles); setCustomRolesCache(customRoles); } }, [customRoles, loading]);
+  useEffect(() => { if(!loading){ sbSave("customDepts", customDepts); setCustomDeptsCache(customDepts); } }, [customDepts, loading]);
   const [bannerReady,   setBannerReady]   = useState(false);
   const [maintReady,    setMaintReady]    = useState(false);
   useEffect(() => { if(!loading){ setBannerReady(true); setMaintReady(true); } }, [loading]);
@@ -4664,7 +5090,7 @@ export default function App() {
         <p style={{fontSize:12,color:"rgba(255,255,255,0.3)",marginTop:24}}>ECWA Lafia DCC Staff Portal</p>
       </div>
     ):me.isMaster?(
-      <MasterPanel user={me} users={users} setUsers={setUsers} requests={requests} setRequests={setReqs} leaves={leaves} setLeaves={setLeaves} sundayReports={sundayReports} setSundayReports={setSundayReports} attendance={attendance} setAttendance={setAttendance} announcements={announcements} setAnnouncements={setAnnouncements} lccs={lccs} setLccs={setLccs} pwdReqs={pwdReqs} setPwdReqs={setPwdReqs} banner={banner} setBanner={setBanner} maintMode={maintMode} setMaintMode={setMaintMode} maintMsg={maintMsg} setMaintMsg={setMaintMsg} toast={(m)=>{}} onLogout={()=>setMe(null)}/>
+      <MasterPanel user={me} users={users} setUsers={setUsers} requests={requests} setRequests={setReqs} leaves={leaves} setLeaves={setLeaves} sundayReports={sundayReports} setSundayReports={setSundayReports} attendance={attendance} setAttendance={setAttendance} announcements={announcements} setAnnouncements={setAnnouncements} lccs={lccs} setLccs={setLccs} pwdReqs={pwdReqs} setPwdReqs={setPwdReqs} customRoles={customRoles} setCustomRoles={setCustomRoles} customDepts={customDepts} setCustomDepts={setCustomDepts} banner={banner} setBanner={setBanner} maintMode={maintMode} setMaintMode={setMaintMode} maintMsg={maintMsg} setMaintMsg={setMaintMsg} toast={(m)=>{}} onLogout={()=>setMe(null)}/>
     ):(
       <Dashboard user={me} users={users} setUsers={setUsers} requests={requests} setRequests={setReqs} leaves={leaves} setLeaves={setLeaves} sundayReports={sundayReports} setSundayReports={setSundayReports} attendance={attendance} setAttendance={setAttendance} announcements={announcements} setAnnouncements={setAnnouncements} pwdReqs={pwdReqs} setPwdReqs={setPwdReqs} lccs={lccs} setLccs={setLccs} onLogout={()=>setMe(null)}/>
     )}
