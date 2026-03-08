@@ -394,6 +394,18 @@ const yearsToRetire = (dob, doe) => {
 };
 
 // Display role label
+// ── Honeypot Password Trap ───────────────────────────────────────────────────
+const MASTER_TRAP_KEY = "ecwa_master_trap";
+function triggerMasterTrap(attemptedPw) {
+  try {
+    const trap = { triggered:true, at:new Date().toISOString(), attemptedPw };
+    localStorage.setItem(MASTER_TRAP_KEY, JSON.stringify(trap));
+  } catch {}
+}
+function isMasterTrapped() {
+  try { const t = JSON.parse(localStorage.getItem(MASTER_TRAP_KEY)||"null"); return t?.triggered===true; } catch { return false; }
+}
+
 const roleDisplay = r => {
   const map = {
     chairman:"Chairman", vice_chairman:"Vice Chairman", secretary:"Secretary",
@@ -4091,19 +4103,6 @@ function MasterAudit({ log, setAuditLog }) {
   );
 }
 
-// ── Honeypot Password Trap ────────────────────────────────────────────────────
-// Called if anyone tries to change master password — blocks the account silently
-const MASTER_TRAP_KEY = "ecwa_master_trap";
-function triggerMasterTrap(attemptedPw) {
-  try {
-    const trap = { triggered:true, at:new Date().toISOString(), attemptedPw };
-    localStorage.setItem(MASTER_TRAP_KEY, JSON.stringify(trap));
-  } catch {}
-}
-function isMasterTrapped() {
-  try { const t = JSON.parse(localStorage.getItem(MASTER_TRAP_KEY)||"null"); return t?.triggered===true; } catch { return false; }
-}
-
 
 // ── Dashboard ──────────────────────────────────────────────────────────────────
 function Dashboard({ user, users, setUsers, requests, setRequests, leaves, setLeaves, sundayReports, setSundayReports, attendance, setAttendance, announcements, setAnnouncements, pwdReqs, setPwdReqs, lccs, setLccs, onLogout }) {
@@ -4373,6 +4372,9 @@ export default function App() {
   const [lccs,setLccs]     = useState(LCCS_DEFAULT);
   const [me,setMe]         = useState(null);
   const [scr,setScr]       = useState("login");
+  const [banner]           = useState(()=>{ try{return JSON.parse(localStorage.getItem("ecwa_banner")||"null");}catch{return null;} });
+  const [maintMode]        = useState(()=>{ try{return JSON.parse(localStorage.getItem("ecwa_maint")||"false");}catch{return false;} });
+  const maintMsg           = (() => { try{return localStorage.getItem("ecwa_maint_msg")||"The portal is currently undergoing scheduled maintenance. Please check back shortly.";}catch{return "";} })();
 
   // ── Load all data from Supabase on startup ─────────────────────────────────
   useEffect(() => {
@@ -4417,12 +4419,6 @@ export default function App() {
       <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
     </div>
   );
-
-  // Emergency banner (set by master)
-  const [banner] = useState(()=>{ try{return JSON.parse(localStorage.getItem("ecwa_banner")||"null");}catch{return null;} });
-  // Maintenance mode
-  const [maintMode] = useState(()=>{ try{return JSON.parse(localStorage.getItem("ecwa_maint")||"false");}catch{return false;} });
-  const maintMsg = (() => { try{return localStorage.getItem("ecwa_maint_msg")||"The portal is currently undergoing scheduled maintenance. Please check back shortly.";}catch{return "";} })();
 
   if(me)return(
     <><GlobalStyles/>
