@@ -5200,7 +5200,7 @@ export default function App() {
           });
         }
       } catch(e) {}
-    }, 20000);
+    }, 5000);
     return () => clearInterval(interval);
   }, [loading]);
 
@@ -5270,15 +5270,18 @@ export default function App() {
       {scr==="login"
         ?<SignIn users={users} setUsers={setUsers} onLogin={setMe} onGo={setScr} pwdReqs={pwdReqs} setPwdReqs={setPwdReqs}/>
         :<SignUp users={users} lccs={lccs} setLccs={setLccs} onSignUp={async u=>{
-          // Read latest users from Supabase first to avoid race condition overwriting other signups
           try {
+            // 1. Read absolute latest from Supabase to avoid race condition
             const { data } = await supabase.from("app_state").select("value").eq("key","users").single();
             const latest = (data?.value && Array.isArray(data.value)) ? data.value : users;
             const newId = Math.max(0,...latest.map(x=>x.id))+1;
             const updated = [...latest, {id:newId,...u}];
+            // 2. Save directly to Supabase immediately — don't rely on useEffect chain
+            await supabase.from("app_state").upsert({ key:"users", value:updated, updated_at:new Date().toISOString() });
+            // 3. Update local state so current session reflects it
             setUsers(updated);
           } catch(e) {
-            // Fallback to local state if Supabase unreachable
+            // Fallback
             setUsers(us=>[...us,{id:Math.max(0,...us.map(x=>x.id))+1,...u}]);
           }
         }} onGo={setScr}/>
