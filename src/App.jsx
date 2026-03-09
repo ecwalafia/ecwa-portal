@@ -4314,7 +4314,7 @@ function MasterAppointments({ users, setUsers, toast, addLog }) {
             </div>
           )}
           <div style={{fontSize:12,color:"rgba(255,255,255,0.5)",marginBottom:14}}>
-            They will log in with their existing email and password. Their pastor profile, photo and signature remain unchanged. They will retain Sunday report access for their LC ({confirming.pastor.lc_ph||"—"}).
+            A separate {confirming.position.label} account will be created. Their biodata, photo and signature will be carried over. Login credentials will appear on their pastor profile — only they can see it. Their pastor account remains completely unchanged.
           </div>
           <div style={{display:"flex",gap:10}}>
             <button onClick={()=>setConfirming(null)} style={{background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.15)",color:"#fff",borderRadius:8,padding:"7px 16px",cursor:"pointer",fontSize:12}}>Cancel</button>
