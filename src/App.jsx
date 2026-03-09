@@ -4173,15 +4173,18 @@ function MasterAppointments({ users, setUsers, toast, addLog }) {
     { role:"lo",           label:"Local Overseer (LO)",      icon:"🏘️", color:"#27ae60" },
   ];
 
-  // Current holders — find pastor who has active appointment for each role
+  // Current holders — pastor who has active appointment for each role
   const currentHolders = {};
   APPT_POSITIONS.forEach(p => {
-    currentHolders[p.role] = users.find(u => u.category==="pastor" && u.appointment?.role===p.role && u.appointment?.active);
+    if(p.role==="lo") return; // LO managed separately
+    currentHolders[p.role] = users.find(u =>
+      u.category==="pastor" && u.appointment?.role===p.role && u.appointment?.active===true
+    );
   });
 
-  // Pastors eligible to be appointed (no active appointment, not an LO account)
+  // Pastors eligible to be appointed
   const eligiblePastors = users.filter(u =>
-    u.category === "pastor" && !u.appointment?.active && !u._apptAccount && !u.loAppointment?.active
+    u.category==="pastor" && !u.appointment?.active && !u._apptAccount
   ).filter(u =>
     !filter || u.name?.toLowerCase().includes(filter.toLowerCase()) || u.lc_ph?.toLowerCase().includes(filter.toLowerCase())
   );
@@ -4205,80 +4208,78 @@ function MasterAppointments({ users, setUsers, toast, addLog }) {
 
   const appoint = async (pastor, position) => {
     if(position.role === "lo") {
-      toast("To appoint an LO, go to Personnel → find the pastor → Appoint as LO", "info");
+      toast("To appoint an LO, go to Personnel → find the pastor → Appoint as LO");
       setConfirming(null); return;
     }
-    const current  = currentHolders[position.role];
-    const tempPw   = genPassword();
-    const hashed   = await hashPassword(tempPw);
-    const apptEmail= APPT_EMAILS[position.role];
-    const apptOn   = today();
+    const current   = currentHolders[position.role];
+    const tempPw    = genPassword();
+    const hashed    = await hashPassword(tempPw);
+    const apptEmail = APPT_EMAILS[position.role];
+    const apptOn    = today();
+    const newAcctId = "APPT_"+position.role+"_"+Date.now();
 
-    // 1. Suspend old holder's appointment record on their pastor profile
-    if(current) {
-      setUsers(us => us.map(u => u.id === current.id ? {
-        ...u,
-        appointment: { ...u.appointment, active:false, revokedOn:apptOn, revokedBy:"master" },
-        appointmentHistory:[...(u.appointmentHistory||[]),
-          { role:current.role, from:u.appointment?.appointedOn||"—", to:apptOn, revokedBy:"master" }
-        ]
-      } : u));
-      // Deactivate old holder's separate office account
-      setUsers(us => us.map(u => u._apptRole===current.role&&u._apptAccount ? {...u, approved:false, suspendedOn:apptOn} : u));
-    }
-
-    // 2. Create or reactivate separate office account for this position
-    const existingAcct = users.find(u => u._apptRole===position.role && u._apptAccount);
-    if(existingAcct) {
-      setUsers(us => us.map(u => u.id===existingAcct.id ? {
-        ...u, name:pastor.name, password:hashed, approved:true,
-        mustChangePassword:true, appointedPastorId:pastor.id, appointedOn:apptOn
-      } : u));
-    } else {
-      setUsers(us => [...us, {
-        id: "APPT_"+position.role+"_"+Date.now(),
-        name: pastor.name, email: apptEmail, password: hashed,
-        role: position.role, category:"office",
-        _apptAccount: true, _apptRole: position.role,
-        approved: true, mustChangePassword: true,
-        appointedPastorId: pastor.id, appointedOn: apptOn, appointedBy:"master",
-        docs:{}, customDocSections:[],
-      }]);
-    }
-
-    // 3. Store appointment on pastor's own pastor account (untouched otherwise)
-    setUsers(us => us.map(u => u.id===pastor.id ? {
-      ...u,
-      appointment: {
-        role: position.role, label: position.label,
-        email: apptEmail, tempPw,
-        active: true, appointedOn: apptOn, appointedBy:"master"
-      },
-      appointmentHistory:[...(u.appointmentHistory||[]),
-        { role:position.role, from:apptOn, to:null, appointedBy:"master" }
-      ]
-    } : u));
+    // Single atomic update — do everything in one setUsers call
+    setUsers(us => {
+      const existingAcct = us.find(u => u._apptRole===position.role && u._apptAccount);
+      let result = us.map(u => {
+        // Revoke old holder's appointment on their pastor profile
+        if(current && u.id===current.id) {
+          return { ...u, appointment:{ ...u.appointment, active:false, revokedOn:apptOn },
+            appointmentHistory:[...(u.appointmentHistory||[]),
+              { role:position.role, from:u.appointment?.appointedOn||"—", to:apptOn }] };
+        }
+        // Suspend old separate office account for this role
+        if(u._apptRole===position.role && u._apptAccount) {
+          return existingAcct && u.id===existingAcct.id
+            ? { ...u, name:pastor.name, email:apptEmail, password:hashed,
+                approved:true, mustChangePassword:true,
+                appointedPastorId:pastor.id, appointedOn:apptOn, appointedBy:"master" }
+            : { ...u, approved:false, suspendedOn:apptOn };
+        }
+        // Store appointment reference on the appointed pastor's account
+        if(u.id===pastor.id) {
+          return { ...u,
+            appointment:{ role:position.role, label:position.label,
+              email:apptEmail, tempPw, active:true,
+              appointedOn:apptOn, appointedBy:"master" },
+            appointmentHistory:[...(u.appointmentHistory||[]),
+              { role:position.role, from:apptOn, to:null }] };
+        }
+        return u;
+      });
+      // If no existing account, add a brand new one
+      if(!existingAcct) {
+        result = [...result, {
+          id:newAcctId, name:pastor.name, email:apptEmail, password:hashed,
+          role:position.role, category:"office",
+          _apptAccount:true, _apptRole:position.role,
+          approved:true, mustChangePassword:true,
+          appointedPastorId:pastor.id, appointedOn:apptOn, appointedBy:"master",
+          dept:"admin", docs:{}, customDocSections:[],
+        }];
+      }
+      return result;
+    });
 
     const replacedMsg = current ? " (replaced "+current.name+")" : "";
     addLog("APPOINT", "Appointed "+pastor.name+" as "+position.label+replacedMsg);
     setConfirming(null);
-    toast("✅ "+pastor.name+" appointed as "+position.label+". Credentials visible on their profile.");
+    toast("✅ "+pastor.name+" appointed as "+position.label+". Credentials are on their profile.");
   };
 
   const revert = (pastorId, position) => {
     const apptOn = today();
-    // Suspend the separate office account
-    setUsers(us => us.map(u => u._apptRole===position.role&&u._apptAccount ? {...u,approved:false,suspendedOn:apptOn} : u));
-    // Clear appointment from pastor profile
-    setUsers(us => us.map(u => u.id===pastorId ? {
-      ...u,
-      appointment: null,
-      appointmentHistory:[...(u.appointmentHistory||[]),
-        { role:position.role, from:u.appointment?.appointedOn||"—", to:apptOn, revokedBy:"master" }
-      ]
-    } : u));
-    addLog("REVERT", `Reverted ${position.label} back to Pastor`);
-    toast(`✅ Reverted to Pastor. Office account suspended.`);
+    setUsers(us => us.map(u => {
+      if(u._apptRole===position.role && u._apptAccount)
+        return {...u, approved:false, suspendedOn:apptOn};
+      if(u.id===pastorId)
+        return { ...u, appointment:null,
+          appointmentHistory:[...(u.appointmentHistory||[]),
+            { role:position.role, from:u.appointment?.appointedOn||"—", to:apptOn }] };
+      return u;
+    }));
+    addLog("REVERT", "Reverted "+position.label+" back to Pastor");
+    toast("✅ Reverted to Pastor. Office account suspended.");
   };
 
   return (
