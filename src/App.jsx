@@ -5096,8 +5096,10 @@ function Dashboard({ user, users, setUsers, requests, setRequests, leaves, setLe
 // ── Supabase save helper ───────────────────────────────────────────────────────
 async function sbSave(key, value) {
   try {
-    await supabase.from("app_state").upsert({ key, value, updated_at: new Date().toISOString() });
-  } catch(e) { console.error("Supabase save error:", e); }
+    const { error } = await supabase.from("app_state")
+      .upsert({ key, value, updated_at: new Date().toISOString() }, { onConflict:"key" });
+    if(error) console.error("Supabase save error:", key, error);
+  } catch(e) { console.error("Supabase save error:", key, e); }
 }
 
 // ── Isolated print helper — only prints the target element, nothing else ──────
@@ -5271,17 +5273,22 @@ export default function App() {
         ?<SignIn users={users} setUsers={setUsers} onLogin={setMe} onGo={setScr} pwdReqs={pwdReqs} setPwdReqs={setPwdReqs}/>
         :<SignUp users={users} lccs={lccs} setLccs={setLccs} onSignUp={async u=>{
           try {
-            // 1. Read absolute latest from Supabase to avoid race condition
-            const { data } = await supabase.from("app_state").select("value").eq("key","users").single();
+            // 1. Read absolute latest from Supabase
+            const { data, error:readErr } = await supabase.from("app_state").select("value").eq("key","users").single();
+            if(readErr) throw readErr;
             const latest = (data?.value && Array.isArray(data.value)) ? data.value : users;
             const newId = Math.max(0,...latest.map(x=>x.id))+1;
             const updated = [...latest, {id:newId,...u}];
-            // 2. Save directly to Supabase immediately — don't rely on useEffect chain
-            await supabase.from("app_state").upsert({ key:"users", value:updated, updated_at:new Date().toISOString() });
-            // 3. Update local state so current session reflects it
+            // 2. Save directly to Supabase with onConflict to ensure upsert works
+            const { error:saveErr } = await supabase.from("app_state")
+              .upsert({ key:"users", value:updated, updated_at:new Date().toISOString() }, { onConflict:"key" });
+            if(saveErr) throw saveErr;
+            // 3. Update local state
             setUsers(updated);
           } catch(e) {
-            // Fallback
+            console.error("Signup save error:", e);
+            // Still show success but warn
+            alert("Account created but there was a save issue. Please contact admin if your account does not appear.");
             setUsers(us=>[...us,{id:Math.max(0,...us.map(x=>x.id))+1,...u}]);
           }
         }} onGo={setScr}/>
