@@ -4259,9 +4259,10 @@ function MasterAppointments({ users, setUsers, toast, addLog }) {
       ]
     } : u));
 
-    addLog("APPOINT", `Appointed ${pastor.name} as ${position.label}${current?` (replaced ${current.name})`:""}`);
+    const replacedMsg = current ? " (replaced "+current.name+")" : "";
+    addLog("APPOINT", "Appointed "+pastor.name+" as "+position.label+replacedMsg);
     setConfirming(null);
-    toast(`✅ ${pastor.name} appointed as ${position.label}. Credentials visible on their profile.`);
+    toast("✅ "+pastor.name+" appointed as "+position.label+". Credentials visible on their profile.");
   };
 
   const revert = (pastorId, position) => {
