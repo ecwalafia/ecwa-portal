@@ -3352,7 +3352,7 @@ function SignUp({ users, lccs, setLccs, onSignUp, onGo }) {
       const roleObj = getAllOfficeRoles().find(r=>r.title===f.jobTitle);
       const role = cat==="pastor"?"pastor":(roleObj?.role||"staff");
       const hashedPw = await hashPassword(f.pw);
-      onSignUp({
+      await onSignUp({
         name:f.name,email:f.email,password:hashedPw,role,category:cat,
         phone:f.phone,dob:f.dob||undefined,doj:f.doj||undefined,
         dept:cat==="office"?f.dept:undefined,
@@ -3367,7 +3367,7 @@ function SignUp({ users, lccs, setLccs, onSignUp, onGo }) {
       });
       setOk(true);
     } catch(e) {
-      showErr("Something went wrong. Please try again.");
+      showErr("Registration failed: " + (e?.message || "Please check your connection and try again."));
     } finally {
       setSubmitting(false);
     }
@@ -5097,18 +5097,15 @@ function Dashboard({ user, users, setUsers, requests, setRequests, leaves, setLe
 let _sbSaving = false;
 const _sbTimers = {};
 function sbSave(key, value) {
-  // Debounce: wait 1.5s after last change before writing to Supabase
   clearTimeout(_sbTimers[key]);
   _sbTimers[key] = setTimeout(async () => {
     _sbSaving = true;
     try {
-      // Strip large base64 signatures to keep payload small and avoid timeouts
       let payload = value;
       if (key === "users" && Array.isArray(value)) {
         payload = value.map(u => ({
           ...u,
-          signatureImage: u.signatureImage && u.signatureImage.length > 500
-            ? "[sig]" : u.signatureImage
+          signatureImage: u.signatureImage && u.signatureImage.length > 500 ? "[sig]" : u.signatureImage
         }));
       }
       const { error } = await supabase.from("app_state")
@@ -5203,19 +5200,21 @@ export default function App() {
     loadAll();
   }, []);
 
-  // ── Live poll — re-fetch users every 30s so master sees new signups instantly ──
+  // ── Live poll — only picks up brand-new signups, never overwrites local state ──
   useEffect(() => {
     if(loading) return;
     const interval = setInterval(async () => {
+      if(_sbSaving) return; // never read while a write is in flight
       try {
         const { data } = await supabase.from("app_state").select("value").eq("key","users").single();
         if(data?.value) {
           setUsers(prev => {
             const remote = data.value;
-            // Only update if something changed
-            if(JSON.stringify(remote.map(u=>u.id+u.approved)) !== JSON.stringify(prev.map(u=>u.id+u.approved)))
-              return remote;
-            return prev;
+            const prevIds = new Set(prev.map(u => u.id));
+            const brandNew = remote.filter(u => !prevIds.has(u.id));
+            // Only add genuinely new users — NEVER overwrite existing ones
+            if(brandNew.length > 0) return [...prev, ...brandNew];
+            return prev; // no change
           });
         }
       } catch(e) {}
@@ -5289,25 +5288,19 @@ export default function App() {
       {scr==="login"
         ?<SignIn users={users} setUsers={setUsers} onLogin={setMe} onGo={setScr} pwdReqs={pwdReqs} setPwdReqs={setPwdReqs}/>
         :<SignUp users={users} lccs={lccs} setLccs={setLccs} onSignUp={async u=>{
-          try {
-            // 1. Read absolute latest from Supabase
-            const { data, error:readErr } = await supabase.from("app_state").select("value").eq("key","users").single();
-            if(readErr) throw readErr;
-            const latest = (data?.value && Array.isArray(data.value)) ? data.value : users;
-            const newId = Math.max(0,...latest.map(x=>x.id))+1;
-            const updated = [...latest, {id:newId,...u}];
-            // 2. Save directly to Supabase with onConflict to ensure upsert works
-            const { error:saveErr } = await supabase.from("app_state")
-              .upsert({ key:"users", value:updated, updated_at:new Date().toISOString() }, { onConflict:"key" });
-            if(saveErr) throw saveErr;
-            // 3. Update local state
-            setUsers(updated);
-          } catch(e) {
-            console.error("Signup save error:", e);
-            // Still show success but warn
-            alert("Account created but there was a save issue. Please contact admin if your account does not appear.");
-            setUsers(us=>[...us,{id:Math.max(0,...us.map(x=>x.id))+1,...u}]);
-          }
+          const { data, error:readErr } = await supabase.from("app_state").select("value").eq("key","users").single();
+          if(readErr) throw new Error("Could not connect. Check your internet connection.");
+          const latest = (data?.value && Array.isArray(data.value)) ? data.value : users;
+          if(latest.find(x=>x.email.toLowerCase()===u.email.toLowerCase())) throw new Error("This email is already registered.");
+          const newId = Math.max(0,...latest.map(x=>x.id))+1;
+          const newUser = {id:newId,...u};
+          const updated = [...latest, newUser];
+          // Strip sig from DB payload — keep full sig in local state only
+          const dbPayload = updated.map(x=>({...x, signatureImage: x.signatureImage && x.signatureImage.length > 500 ? "[sig]" : x.signatureImage}));
+          const { error:saveErr } = await supabase.from("app_state")
+            .upsert({ key:"users", value:dbPayload, updated_at:new Date().toISOString() }, { onConflict:"key" });
+          if(saveErr) throw new Error("Save failed: " + saveErr.message);
+          setUsers(updated);
         }} onGo={setScr}/>
       }
       {/* KrizTechs Branding */}
