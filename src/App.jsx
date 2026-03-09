@@ -4612,9 +4612,37 @@ function MasterStaff({ users, setUsers, toast, addLog }) {
   // Appointment roles (chairman, vice_chairman, secretary, ads, lo) managed via Appointments tab
   const ROLES = ["cashier","accountant","auditor","conf_secretary","personnel","pastor","ems_coordinator","lecturer","support"];
 
+  const pendingAccounts = users.filter(u=>!u.approved && !u._suspendedForAppt);
+
   return (
     <div>
       <div style={{fontFamily:"Georgia,serif",color:"#c9a84c",fontSize:20,marginBottom:16}}>👥 Staff Control</div>
+
+      {/* Pending Approvals */}
+      {pendingAccounts.length>0&&(
+        <div style={{background:"rgba(230,126,34,0.08)",border:"2px solid rgba(230,126,34,0.4)",borderRadius:12,padding:16,marginBottom:20}}>
+          <div style={{color:"#e67e22",fontWeight:700,fontSize:14,marginBottom:12}}>⏳ Pending Account Approvals ({pendingAccounts.length})</div>
+          <div style={{display:"flex",flexDirection:"column",gap:8}}>
+            {pendingAccounts.map(u=>(
+              <div key={u.id} style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:8,padding:"10px 14px",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8}}>
+                <div>
+                  <div style={{color:"#fff",fontWeight:600,fontSize:13}}>{u.name}</div>
+                  <div style={{fontSize:11,color:"rgba(255,255,255,0.4)",marginTop:2}}>{u.email} · {u.category==="pastor"?u.rank:u.jobTitle||roleDisplay(u.role)} · {u.category==="pastor"?u.lcc+" LCC":""}</div>
+                </div>
+                <div style={{display:"flex",gap:8}}>
+                  <button onClick={()=>{
+                    setUsers(us=>us.map(x=>x.id===u.id?{...x,approved:true}:x));
+                    addLog("APPROVE_ACCOUNT","Approved account of "+u.name);
+                    toast("✅ "+u.name+" approved. They can now sign in.");
+                  }} style={{background:"rgba(39,174,96,0.2)",border:"1px solid rgba(39,174,96,0.5)",color:"#27ae60",borderRadius:6,padding:"5px 14px",cursor:"pointer",fontSize:12,fontWeight:700}}>✅ Approve</button>
+                  <button onClick={()=>deleteStaff(u)} style={{background:"rgba(192,57,43,0.15)",border:"1px solid rgba(192,57,43,0.3)",color:"#e74c3c",borderRadius:6,padding:"5px 10px",cursor:"pointer",fontSize:12}}>🗑️ Reject</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {!sel&&(
         <div>
           <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search staff by name or email..." style={{background:"#1a1a2e",color:"#fff",border:"1px solid rgba(255,255,255,0.2)",borderRadius:8,padding:"8px 12px",width:"100%",boxSizing:"border-box",marginBottom:14,fontSize:13}}/>
