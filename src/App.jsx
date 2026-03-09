@@ -2548,7 +2548,7 @@ function PersonnelMod({ user, users, setUsers, lccs, toast }) {
   return(
     <div>
       {/* Pending approvals banner — only for admins */}
-      {(isAdmin||user.isMaster) && pendingAccounts.length>0&&(
+      {isAdmin && !user.isMaster && pendingAccounts.length>0&&(
         <div className="card" style={{marginBottom:18,padding:"16px 20px",borderLeft:"4px solid #e67e22"}}>
           <div style={{fontFamily:"Georgia,serif",fontSize:15,fontWeight:700,color:"#0b1f3a",marginBottom:12}}>⏳ Pending Account Approvals ({pendingAccounts.length})</div>
           <div style={{display:"flex",flexDirection:"column",gap:8}}>
