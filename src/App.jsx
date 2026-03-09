@@ -5095,14 +5095,28 @@ function Dashboard({ user, users, setUsers, requests, setRequests, leaves, setLe
 
 // ── Supabase save helper ───────────────────────────────────────────────────────
 let _sbSaving = false;
-async function sbSave(key, value) {
-  _sbSaving = true;
-  try {
-    const { error } = await supabase.from("app_state")
-      .upsert({ key, value, updated_at: new Date().toISOString() }, { onConflict:"key" });
-    if(error) console.error("Supabase save error:", key, error);
-  } catch(e) { console.error("Supabase save error:", key, e); }
-  finally { _sbSaving = false; }
+const _sbTimers = {};
+function sbSave(key, value) {
+  // Debounce: wait 1.5s after last change before writing to Supabase
+  clearTimeout(_sbTimers[key]);
+  _sbTimers[key] = setTimeout(async () => {
+    _sbSaving = true;
+    try {
+      // Strip large base64 signatures to keep payload small and avoid timeouts
+      let payload = value;
+      if (key === "users" && Array.isArray(value)) {
+        payload = value.map(u => ({
+          ...u,
+          signatureImage: u.signatureImage && u.signatureImage.length > 500
+            ? "[sig]" : u.signatureImage
+        }));
+      }
+      const { error } = await supabase.from("app_state")
+        .upsert({ key, value: payload, updated_at: new Date().toISOString() }, { onConflict:"key" });
+      if(error) console.error("Supabase save error:", key, error);
+    } catch(e) { console.error("Supabase save error:", key, e); }
+    finally { _sbSaving = false; }
+  }, 1500);
 }
 
 // ── Isolated print helper — only prints the target element, nothing else ──────
@@ -5189,25 +5203,23 @@ export default function App() {
     loadAll();
   }, []);
 
-  // ── Live poll — re-fetch users every 5s so master sees new signups instantly ──
+  // ── Live poll — re-fetch users every 30s so master sees new signups instantly ──
   useEffect(() => {
     if(loading) return;
     const interval = setInterval(async () => {
-      if(_sbSaving) return; // skip poll while a save is in flight to prevent overwriting local approvals
       try {
         const { data } = await supabase.from("app_state").select("value").eq("key","users").single();
         if(data?.value) {
           setUsers(prev => {
             const remote = data.value;
-            // Only merge NEW users from remote — never let poll overwrite approvals made locally
-            const prevIds = new Set(prev.map(u=>u.id));
-            const newRemote = remote.filter(u=>!prevIds.has(u.id));
-            if(newRemote.length > 0) return [...prev, ...newRemote];
+            // Only update if something changed
+            if(JSON.stringify(remote.map(u=>u.id+u.approved)) !== JSON.stringify(prev.map(u=>u.id+u.approved)))
+              return remote;
             return prev;
           });
         }
       } catch(e) {}
-    }, 5000);
+    }, 30000);
     return () => clearInterval(interval);
   }, [loading]);
 
