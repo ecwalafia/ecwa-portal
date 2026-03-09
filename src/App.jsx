@@ -5093,27 +5093,202 @@ function Dashboard({ user, users, setUsers, requests, setRequests, leaves, setLe
   );
 }
 
-// ── Supabase save helper ───────────────────────────────────────────────────────
+// ── Archive + Supabase save helper ────────────────────────────────────────────
 let _sbSaving = false;
 const _sbTimers = {};
+let _archivePending = null; // holds {attendance, sundayReports} waiting for user confirmation
+
+// ── Excel export (pure JS, no library needed) ──────────────────────────────
+function exportToExcel(sheets, filename) {
+  // Build a multi-sheet CSV-style XML workbook (opens perfectly in Excel/LibreOffice)
+  const xmlParts = [`<?xml version="1.0"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
+<Styles>
+  <Style ss:ID="header">
+    <Font ss:Bold="1"/>
+    <Interior ss:Color="#0B1F3A" ss:Pattern="Solid"/>
+    <Font ss:Color="#FFFFFF" ss:Bold="1"/>
+  </Style>
+  <Style ss:ID="gold">
+    <Interior ss:Color="#C9A84C" ss:Pattern="Solid"/>
+    <Font ss:Bold="1"/>
+  </Style>
+</Styles>`];
+
+  for (const { name, headers, rows } of sheets) {
+    xmlParts.push(`<Worksheet ss:Name="${name}"><Table>`);
+    // Header row
+    xmlParts.push(`<Row>`);
+    for (const h of headers) {
+      xmlParts.push(`<Cell ss:StyleID="gold"><Data ss:Type="String">${h}</Data></Cell>`);
+    }
+    xmlParts.push(`</Row>`);
+    // Data rows
+    for (const row of rows) {
+      xmlParts.push(`<Row>`);
+      for (const cell of row) {
+        const val = cell === null || cell === undefined ? "" : String(cell).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+        const type = typeof cell === "number" ? "Number" : "String";
+        xmlParts.push(`<Cell><Data ss:Type="${type}">${val}</Data></Cell>`);
+      }
+      xmlParts.push(`</Row>`);
+    }
+    xmlParts.push(`</Table></Worksheet>`);
+  }
+  xmlParts.push(`</Workbook>`);
+
+  const blob = new Blob([xmlParts.join("")], { type: "application/vnd.ms-excel" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function buildArchiveSheets(oldAttendance, oldSundayReports) {
+  const sheets = [];
+
+  if (oldAttendance && oldAttendance.length > 0) {
+    sheets.push({
+      name: "Attendance Archive",
+      headers: ["Date","Staff Name","Email","Dept","Clock In","Clock Out","Achievements","Challenges","Tomorrow Plan"],
+      rows: oldAttendance.map(r => [
+        r.date, r.userName, r.userEmail, r.dept,
+        r.clockIn||"", r.clockOut||"",
+        r.dailyReport?.achievements||"",
+        r.dailyReport?.challenges||"",
+        r.dailyReport?.tomorrowPlan||""
+      ])
+    });
+  }
+
+  if (oldSundayReports && oldSundayReports.length > 0) {
+    sheets.push({
+      name: "Sunday Reports Archive",
+      headers: ["Date","Pastor","LCC","Church","Men","Women","Children","Total","Offering","Tithes","Thanksgiving","Freewill","Total Collections","Remittance Due"],
+      rows: oldSundayReports.map(r => [
+        r.date, r.pastorName, r.lcc, r.lc_ph,
+        r.attendance?.men||0, r.attendance?.women||0, r.attendance?.children||0,
+        (r.attendance?.men||0)+(r.attendance?.women||0)+(r.attendance?.children||0),
+        r.collections?.offering||0, r.collections?.tithes||0,
+        r.collections?.thanksgiving||0, r.collections?.freewill||0,
+        r.totalGross||0, r.remittanceDue||0
+      ])
+    });
+  }
+
+  return sheets;
+}
+
+function stripForDb(key, value) {
+  if (key === "users" && Array.isArray(value)) {
+    return value.map(u => ({ ...u, signatureImage: null }));
+  }
+  if (key === "attendance" && Array.isArray(value)) {
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - 90);
+    const cutoffStr = cutoff.toISOString().slice(0, 10);
+    return value.filter(r => r.date >= cutoffStr);
+  }
+  if (key === "sundayReports" && Array.isArray(value)) {
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - 365);
+    const cutoffStr = cutoff.toISOString().slice(0, 10);
+    return value.filter(r => r.date >= cutoffStr);
+  }
+  return value;
+}
+
+function getOldRecords(key, value) {
+  if (key === "attendance" && Array.isArray(value)) {
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - 90);
+    const cutoffStr = cutoff.toISOString().slice(0, 10);
+    return value.filter(r => r.date < cutoffStr);
+  }
+  if (key === "sundayReports" && Array.isArray(value)) {
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - 365);
+    const cutoffStr = cutoff.toISOString().slice(0, 10);
+    return value.filter(r => r.date < cutoffStr);
+  }
+  return [];
+}
+
+// Global archive trigger — called by App when old records are detected
+let _triggerArchiveDialog = null;
+
 function sbSave(key, value) {
   clearTimeout(_sbTimers[key]);
   _sbTimers[key] = setTimeout(async () => {
     _sbSaving = true;
     try {
-      let payload = value;
-      if (key === "users" && Array.isArray(value)) {
-        payload = value.map(u => ({
-          ...u,
-          signatureImage: u.signatureImage && u.signatureImage.length > 500 ? "[sig]" : u.signatureImage
-        }));
+      // Check for old records that are about to be trimmed
+      if (key === "attendance" || key === "sundayReports") {
+        const old = getOldRecords(key, value);
+        if (old.length > 0) {
+          // Accumulate old records across both keys
+          if (!_archivePending) _archivePending = { attendance: [], sundayReports: [] };
+          if (key === "attendance") _archivePending.attendance = old;
+          if (key === "sundayReports") _archivePending.sundayReports = old;
+          // Trigger the archive dialog in the UI
+          if (_triggerArchiveDialog) _triggerArchiveDialog({ ..._archivePending });
+        }
       }
+      const payload = stripForDb(key, value);
       const { error } = await supabase.from("app_state")
-        .upsert({ key, value: payload, updated_at: new Date().toISOString() }, { onConflict:"key" });
-      if(error) console.error("Supabase save error:", key, error);
+        .upsert({ key, value: payload, updated_at: new Date().toISOString() }, { onConflict: "key" });
+      if (error) console.error("Supabase save error:", key, error.message);
     } catch(e) { console.error("Supabase save error:", key, e); }
     finally { _sbSaving = false; }
-  }, 1500);
+  }, 2000);
+}
+
+// ── Archive Dialog Component ───────────────────────────────────────────────────
+function ArchiveDialog({ pending, onDownload, onDismiss }) {
+  const attCount = pending?.attendance?.length || 0;
+  const srCount = pending?.sundayReports?.length || 0;
+  if (!pending || (attCount === 0 && srCount === 0)) return null;
+
+  const earliest = [
+    ...(pending.attendance||[]).map(r=>r.date),
+    ...(pending.sundayReports||[]).map(r=>r.date)
+  ].sort()[0];
+  const latest = [
+    ...(pending.attendance||[]).map(r=>r.date),
+    ...(pending.sundayReports||[]).map(r=>r.date)
+  ].sort().reverse()[0];
+
+  return (
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",zIndex:4000,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+      <div style={{background:"#0b1f3a",border:"2px solid #c9a84c",borderRadius:16,padding:28,maxWidth:440,width:"100%",boxShadow:"0 20px 60px rgba(0,0,0,0.5)"}}>
+        <div style={{fontSize:36,textAlign:"center",marginBottom:12}}>📦</div>
+        <h3 style={{fontFamily:"Georgia,serif",color:"#c9a84c",fontSize:20,textAlign:"center",marginBottom:8}}>Old Records Detected</h3>
+        <p style={{color:"rgba(255,255,255,0.65)",fontSize:13,textAlign:"center",lineHeight:1.7,marginBottom:20}}>
+          The system is about to trim old records to keep the database healthy.<br/>
+          <span style={{color:"#fff",fontWeight:600}}>Would you like to download an archive first?</span>
+        </p>
+        <div style={{background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:10,padding:14,marginBottom:20,fontSize:13}}>
+          {attCount > 0 && <div style={{color:"rgba(255,255,255,0.7)",marginBottom:6}}>📋 <span style={{color:"#c9a84c",fontWeight:700}}>{attCount}</span> attendance records</div>}
+          {srCount > 0 && <div style={{color:"rgba(255,255,255,0.7)",marginBottom:6}}>⛪ <span style={{color:"#c9a84c",fontWeight:700}}>{srCount}</span> Sunday reports</div>}
+          <div style={{color:"rgba(255,255,255,0.4)",fontSize:11,marginTop:8}}>Period: {earliest} → {latest}</div>
+        </div>
+        <div style={{display:"flex",flexDirection:"column",gap:10}}>
+          <button onClick={onDownload} style={{background:"#c9a84c",border:"none",color:"#0b1f3a",borderRadius:10,padding:"12px 20px",cursor:"pointer",fontWeight:700,fontSize:14}}>
+            ⬇️ Download Excel Archive &amp; Trim
+          </button>
+          <button onClick={onDismiss} style={{background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.15)",color:"rgba(255,255,255,0.6)",borderRadius:10,padding:"10px 20px",cursor:"pointer",fontSize:13}}>
+            Skip — Trim Without Archiving
+          </button>
+        </div>
+        <p style={{color:"rgba(255,255,255,0.25)",fontSize:11,textAlign:"center",marginTop:14}}>This prompt will appear whenever old records are found.</p>
+      </div>
+    </div>
+  );
 }
 
 // ── Isolated print helper — only prints the target element, nothing else ──────
@@ -5171,6 +5346,18 @@ export default function App() {
   const [banner,   setBanner]   = useState(null);
   const [maintMode,setMaintMode]= useState(false);
   const [maintMsg, setMaintMsg] = useState("The portal is currently undergoing scheduled maintenance. Please check back shortly.");
+  const [archivePending, setArchivePending] = useState(null);
+
+  // Register the archive dialog trigger so sbSave can call it
+  useEffect(() => {
+    _triggerArchiveDialog = (pending) => {
+      setArchivePending(prev => ({
+        attendance: [...(prev?.attendance||[]), ...(pending.attendance||[])].filter((r,i,a)=>a.findIndex(x=>x.id===r.id)===i),
+        sundayReports: [...(prev?.sundayReports||[]), ...(pending.sundayReports||[])].filter((r,i,a)=>a.findIndex(x=>x.id===r.id)===i),
+      }));
+    };
+    return () => { _triggerArchiveDialog = null; };
+  }, []);
 
   // ── Load all data from Supabase on startup ─────────────────────────────────
   useEffect(() => {
@@ -5218,7 +5405,7 @@ export default function App() {
           });
         }
       } catch(e) {}
-    }, 30000);
+    }, 60000);
     return () => clearInterval(interval);
   }, [loading]);
 
@@ -5241,6 +5428,20 @@ export default function App() {
   useEffect(() => { if(maintReady)   sbSave("maintMsg",  maintMsg);  }, [maintMsg,  maintReady]);
 
   // ── Loading screen ─────────────────────────────────────────────────────────
+  const handleArchiveDownload = () => {
+    if (!archivePending) return;
+    const sheets = buildArchiveSheets(archivePending.attendance, archivePending.sundayReports);
+    const now = new Date().toISOString().slice(0,10);
+    exportToExcel(sheets, `ECWA_Lafia_Archive_${now}.xls`);
+    setArchivePending(null);
+    _archivePending = null;
+  };
+
+  const handleArchiveDismiss = () => {
+    setArchivePending(null);
+    _archivePending = null;
+  };
+
   if(loading) return(
     <div style={{minHeight:"100vh",background:"linear-gradient(135deg,#0b1f3a,#1a3a5c)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:16}}>
       <img src={LOGO} alt="ECWA" style={{width:72,height:72,borderRadius:"50%",border:"2px solid #c9a84c"}}/>
@@ -5253,6 +5454,7 @@ export default function App() {
 
   if(me)return(
     <><GlobalStyles/>
+    <ArchiveDialog pending={archivePending} onDownload={handleArchiveDownload} onDismiss={handleArchiveDismiss}/>
     {/* Emergency banner — shown to all users */}
     {banner?.active&&!me.isMaster&&(
       <div style={{background:banner.type==="danger"?"#c0392b":banner.type==="warning"?"#e67e22":"#2980b9",color:"#fff",padding:"10px 20px",textAlign:"center",fontSize:13,fontWeight:600,zIndex:9999,position:"relative"}}>
