@@ -3388,7 +3388,7 @@ function SignUp({ users, lccs, setLccs, onSignUp, onGo }) {
   return(
     <div style={{maxWidth:480,width:"100%",margin:"0 auto"}} className="fade-in">
       <h2 style={{fontFamily:"Georgia,serif",color:"#fff",fontSize:26,marginBottom:4,textAlign:"center"}}>Create Account</h2>
-      <p style={{color:"rgba(255,255,255,0.4)",fontSize:13,marginBottom:22,textAlign:"center"}}>Join the ECWA Lafia DCC Portal</p>
+      <p style={{color:"rgba(255,255,255,0.4)",fontSize:13,marginBottom:22,textAlign:"center"}}>Join the Lafia Portal</p>
       {step===1&&(
         <div style={{display:"flex",flexDirection:"column",gap:12}}>
           <p style={{color:"rgba(255,255,255,0.6)",fontSize:13,marginBottom:4}}>I am a...</p>
@@ -3557,7 +3557,7 @@ function SignIn({ users, setUsers, onLogin, onGo, pwdReqs, setPwdReqs }) {
   return(
     <div style={{maxWidth:400,width:"100%",margin:"0 auto",textAlign:"center"}} className="fade-in">
       <h2 style={{fontFamily:"Georgia,serif",color:"#fff",fontSize:26,marginBottom:4,textAlign:"center"}}>Welcome Back</h2>
-      <p style={{color:"rgba(255,255,255,0.4)",fontSize:13,marginBottom:22,textAlign:"center"}}>Sign in to your ECWA Lafia DCC account</p>
+      <p style={{color:"rgba(255,255,255,0.4)",fontSize:13,marginBottom:22,textAlign:"center"}}>Sign in to your Lafia Portal account</p>
       <div style={{background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:14,padding:24,display:"flex",flexDirection:"column",gap:14,textAlign:"left"}}>
         {er&&<div className="err-box">{er}</div>}
         <div><label style={{color:"rgba(255,255,255,0.5)"}}>Email Address</label><input type="email" placeholder="your@email.com" value={em} onChange={e=>setEm(e.target.value)} onKeyDown={e=>e.key==="Enter"&&go()}/></div>
@@ -4969,7 +4969,7 @@ function Dashboard({ user, users, setUsers, requests, setRequests, leaves, setLe
         <div style={{padding:"0 16px",display:"flex",alignItems:"center",justifyContent:"space-between",height:56}} className="header-desktop-row">
           <div style={{display:"flex",alignItems:"center",gap:10}}>
             <img src={LOGO} alt="ECWA" style={{width:34,height:34,borderRadius:"50%",objectFit:"cover",border:"1.5px solid #c9a84c",flexShrink:0}}/>
-            <div><div style={{fontFamily:"Georgia,serif",color:"#fff",fontSize:14,fontWeight:700,lineHeight:1.2}}>ECWA Lafia DCC</div><div style={{fontSize:9,color:"rgba(255,255,255,0.38)"}}>Staff Portal</div></div>
+            <div><div style={{fontFamily:"Georgia,serif",color:"#fff",fontSize:14,fontWeight:700,lineHeight:1.2}}>ECWA Lafia DCC</div><div style={{fontSize:9,color:"rgba(255,255,255,0.38)"}}>Lafia Portal</div></div>
           </div>
           <div style={{display:"flex",alignItems:"center",gap:6}}>
             <div style={{position:"relative"}}>
@@ -5184,6 +5184,26 @@ export default function App() {
     loadAll();
   }, []);
 
+  // ── Live poll — re-fetch users every 30s so master sees new signups instantly ──
+  useEffect(() => {
+    if(loading) return;
+    const interval = setInterval(async () => {
+      try {
+        const { data } = await supabase.from("app_state").select("value").eq("key","users").single();
+        if(data?.value) {
+          setUsers(prev => {
+            const remote = data.value;
+            // Only update if something changed
+            if(JSON.stringify(remote.map(u=>u.id+u.approved)) !== JSON.stringify(prev.map(u=>u.id+u.approved)))
+              return remote;
+            return prev;
+          });
+        }
+      } catch(e) {}
+    }, 20000);
+    return () => clearInterval(interval);
+  }, [loading]);
+
   // ── Auto-save each collection to Supabase when it changes ─────────────────
   useEffect(() => { if(!loading) sbSave("users", users); }, [users, loading]);
   useEffect(() => { if(!loading) sbSave("requests", requests); }, [requests, loading]);
@@ -5227,7 +5247,7 @@ export default function App() {
         <div style={{fontSize:64,marginBottom:24}}>🔧</div>
         <h2 style={{fontFamily:"Georgia,serif",fontSize:24,color:"#c9a84c",marginBottom:16}}>Portal Under Maintenance</h2>
         <p style={{fontSize:14,color:"rgba(255,255,255,0.6)",maxWidth:400,lineHeight:1.8}}>{maintMsg}</p>
-        <p style={{fontSize:12,color:"rgba(255,255,255,0.3)",marginTop:24}}>ECWA Lafia DCC Staff Portal</p>
+        <p style={{fontSize:12,color:"rgba(255,255,255,0.3)",marginTop:24}}>Lafia Portal</p>
       </div>
     ):me.isMaster?(
       <MasterPanel user={me} users={users} setUsers={setUsers} requests={requests} setRequests={setReqs} leaves={leaves} setLeaves={setLeaves} sundayReports={sundayReports} setSundayReports={setSundayReports} attendance={attendance} setAttendance={setAttendance} announcements={announcements} setAnnouncements={setAnnouncements} lccs={lccs} setLccs={setLccs} pwdReqs={pwdReqs} setPwdReqs={setPwdReqs} customRoles={customRoles} setCustomRoles={setCustomRoles} customDepts={customDepts} setCustomDepts={setCustomDepts} banner={banner} setBanner={setBanner} maintMode={maintMode} setMaintMode={setMaintMode} maintMsg={maintMsg} setMaintMsg={setMaintMsg} toast={(m)=>{}} onLogout={()=>setMe(null)}/>
