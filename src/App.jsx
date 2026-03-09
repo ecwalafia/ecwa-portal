@@ -3352,7 +3352,7 @@ function SignUp({ users, lccs, setLccs, onSignUp, onGo }) {
       const roleObj = getAllOfficeRoles().find(r=>r.title===f.jobTitle);
       const role = cat==="pastor"?"pastor":(roleObj?.role||"staff");
       const hashedPw = await hashPassword(f.pw);
-      onSignUp({
+      await onSignUp({
         name:f.name,email:f.email,password:hashedPw,role,category:cat,
         phone:f.phone,dob:f.dob||undefined,doj:f.doj||undefined,
         dept:cat==="office"?f.dept:undefined,
@@ -3367,7 +3367,7 @@ function SignUp({ users, lccs, setLccs, onSignUp, onGo }) {
       });
       setOk(true);
     } catch(e) {
-      showErr("Something went wrong. Please try again.");
+      showErr("Registration failed: " + (e?.message || "Please check your connection and try again."));
     } finally {
       setSubmitting(false);
     }
@@ -5272,25 +5272,24 @@ export default function App() {
       {scr==="login"
         ?<SignIn users={users} setUsers={setUsers} onLogin={setMe} onGo={setScr} pwdReqs={pwdReqs} setPwdReqs={setPwdReqs}/>
         :<SignUp users={users} lccs={lccs} setLccs={setLccs} onSignUp={async u=>{
-          try {
-            // 1. Read absolute latest from Supabase
-            const { data, error:readErr } = await supabase.from("app_state").select("value").eq("key","users").single();
-            if(readErr) throw readErr;
-            const latest = (data?.value && Array.isArray(data.value)) ? data.value : users;
-            const newId = Math.max(0,...latest.map(x=>x.id))+1;
-            const updated = [...latest, {id:newId,...u}];
-            // 2. Save directly to Supabase with onConflict to ensure upsert works
-            const { error:saveErr } = await supabase.from("app_state")
-              .upsert({ key:"users", value:updated, updated_at:new Date().toISOString() }, { onConflict:"key" });
-            if(saveErr) throw saveErr;
-            // 3. Update local state
-            setUsers(updated);
-          } catch(e) {
-            console.error("Signup save error:", e);
-            // Still show success but warn
-            alert("Account created but there was a save issue. Please contact admin if your account does not appear.");
-            setUsers(us=>[...us,{id:Math.max(0,...us.map(x=>x.id))+1,...u}]);
-          }
+          // 1. Read absolute latest users list from Supabase
+          const { data, error:readErr } = await supabase.from("app_state").select("value").eq("key","users").single();
+          if(readErr) throw new Error("Could not connect to server. Please check your internet connection.");
+          const latest = (data?.value && Array.isArray(data.value)) ? data.value : users;
+          // Guard: double-check email not already taken in latest list
+          if(latest.find(x=>x.email.toLowerCase()===u.email.toLowerCase())) throw new Error("This email is already registered.");
+          const newId = Math.max(0,...latest.map(x=>x.id))+1;
+          const newUser = {id:newId,...u};
+          const updated = [...latest, newUser];
+          // 2. Strip large base64 signature from Supabase payload to avoid size limits;
+          //    signature is kept in local state only (loaded fresh each session from local copy).
+          const updatedForDb = updated.map(x=>({...x, signatureImage: x.signatureImage && x.signatureImage.length > 5000 ? "[signature_stored_locally]" : x.signatureImage}));
+          // 3. Save to Supabase
+          const { error:saveErr } = await supabase.from("app_state")
+            .upsert({ key:"users", value:updatedForDb, updated_at:new Date().toISOString() }, { onConflict:"key" });
+          if(saveErr) throw new Error("Failed to save account: " + saveErr.message);
+          // 4. Update local state with full user object (including signature)
+          setUsers(updated);
         }} onGo={setScr}/>
       }
       {/* KrizTechs Branding */}
