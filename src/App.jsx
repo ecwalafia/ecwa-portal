@@ -5269,7 +5269,19 @@ export default function App() {
       </div>
       {scr==="login"
         ?<SignIn users={users} setUsers={setUsers} onLogin={setMe} onGo={setScr} pwdReqs={pwdReqs} setPwdReqs={setPwdReqs}/>
-        :<SignUp users={users} lccs={lccs} setLccs={setLccs} onSignUp={u=>setUsers(us=>[...us,{id:Math.max(0,...us.map(x=>x.id))+1,...u}])} onGo={setScr}/>
+        :<SignUp users={users} lccs={lccs} setLccs={setLccs} onSignUp={async u=>{
+          // Read latest users from Supabase first to avoid race condition overwriting other signups
+          try {
+            const { data } = await supabase.from("app_state").select("value").eq("key","users").single();
+            const latest = (data?.value && Array.isArray(data.value)) ? data.value : users;
+            const newId = Math.max(0,...latest.map(x=>x.id))+1;
+            const updated = [...latest, {id:newId,...u}];
+            setUsers(updated);
+          } catch(e) {
+            // Fallback to local state if Supabase unreachable
+            setUsers(us=>[...us,{id:Math.max(0,...us.map(x=>x.id))+1,...u}]);
+          }
+        }} onGo={setScr}/>
       }
       {/* KrizTechs Branding */}
       <div style={{marginTop:32,textAlign:"center"}} className="fade-in">
