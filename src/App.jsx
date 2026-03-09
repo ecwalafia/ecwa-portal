@@ -191,6 +191,7 @@ const BUILTIN_DEPARTMENTS = [
   { id:"missions",  label:"Missions (EMS)",              head_role:"ems_coordinator" },
   { id:"admin",     label:"Admin & Personnel",           head_role:"secretary"       },
   { id:"jets",      label:"JETS / Doma Study Center",    head_role:"lecturer"        },
+  { id:"education", label:"Christian Education",         head_role:"ceo"             },
   { id:"executive", label:"Executive",                   head_role:"chairman"        },
 ];
 // Custom departments added by master — stored in Supabase as "customDepts"
@@ -205,10 +206,10 @@ function getAllDepartments(){
 const DEPARTMENTS = BUILTIN_DEPARTMENTS;
 
 // Appointment-only roles — assigned by Master Admin, cannot self-register
-const APPOINTMENT_ROLES = ["chairman","vice_chairman","secretary","ads","lo"];
+const APPOINTMENT_ROLES = ["chairman","vice_chairman","secretary","ads","lo","ceo"];
 
 const BUILTIN_OFFICE_ROLES = [
-  // ⚠️ Chairman, Vice Chairman, Secretary, ADS, LO — appointment only via Master
+  // ⚠️ Chairman, Vice Chairman, Secretary, ADS, LO, CEO — appointment only via Master
   { title:"Confidential Secretary",    role:"conf_secretary",  dept:"admin"     },
   { title:"Personnel Officer",         role:"personnel",       dept:"admin"     },
   { title:"Accountant",                role:"accountant",      dept:"finance"   },
@@ -460,7 +461,7 @@ const roleDisplay = r => {
     accountant:"Accountant", auditor:"Auditor", cashier:"Cashier",
     personnel:"Personnel Officer", ems_coordinator:"EMS Coordinator",
     lecturer:"Lecturer", support:"Support Staff",
-    pastor:"Pastor", lo:"Local Overseer",
+    pastor:"Pastor", lo:"Local Overseer", ceo:"CEO (Christian Ed. Organizer)",
   };
   return map[r] || r;
 };
@@ -4151,11 +4152,12 @@ function MasterAppointments({ users, setUsers, toast, addLog }) {
   const [filter,     setFilter]     = useState("");
 
   const APPT_POSITIONS = [
-    { role:"chairman",     label:"Chairman",           icon:"👑", color:"#c9a84c" },
-    { role:"vice_chairman",label:"Vice Chairman",       icon:"🎖️", color:"#e67e22" },
-    { role:"secretary",    label:"Secretary",           icon:"📋", color:"#2980b9" },
-    { role:"ads",          label:"ADS",                 icon:"📌", color:"#8e44ad" },
-    { role:"lo",           label:"Local Overseer (LO)", icon:"🏘️", color:"#27ae60" },
+    { role:"chairman",     label:"Chairman",                    icon:"👑", color:"#c9a84c" },
+    { role:"vice_chairman",label:"Vice Chairman",               icon:"🎖️", color:"#e67e22" },
+    { role:"secretary",    label:"Secretary",                   icon:"📋", color:"#2980b9", suspendPastor:true },
+    { role:"ads",          label:"ADS",                        icon:"📌", color:"#8e44ad" },
+    { role:"ceo",          label:"CEO (Christian Ed. Organizer)",icon:"🎓", color:"#16a085", dept:"education" },
+    { role:"lo",           label:"Local Overseer (LO)",         icon:"🏘️", color:"#27ae60" },
   ];
 
   // Current holders — find pastor with active appointment for each role
@@ -4179,6 +4181,7 @@ function MasterAppointments({ users, setUsers, toast, addLog }) {
     vice_chairman:"vicechairman@ecwalafia.org",
     secretary:"secretary@ecwalafia.org",
     ads:"ads@ecwalafia.org",
+    ceo:"ceo@ecwalafia.org",
     lo:"lo@ecwalafia.org",
   };
 
@@ -4200,10 +4203,13 @@ function MasterAppointments({ users, setUsers, toast, addLog }) {
 
       return us.map(u => {
         // 1. Clear appointment reference from old pastor holder
+        //    Reactivate if they were suspended for secretary tenure
         if(current && u.id===current.id) {
           return { ...u,
-            _apptTempPw: null,  // clear their temp pw
+            _apptTempPw: null,
             appointment: null,
+            approved: u._suspendedForAppt ? true : u.approved,
+            _suspendedForAppt: undefined,
             appointmentHistory:[...(u.appointmentHistory||[]),
               { role:position.role, from:u.appointment?.appointedOn||"—", to:apptOn }] };
         }
@@ -4218,9 +4224,13 @@ function MasterAppointments({ users, setUsers, toast, addLog }) {
             appointedPastorId:pastor.id, appointedOn:apptOn };
         }
         // 3. Store temp password on new appointee's pastor profile (visible only to them)
+        //    If Secretary — suspend pastor account during tenure
         if(u.id===pastor.id) {
           return { ...u,
             _apptTempPw:tempPw, _apptTempEmail:apptEmail, _apptTempRole:position.label,
+            // Secretary: pastor account suspended during tenure
+            approved: position.suspendPastor ? false : u.approved,
+            _suspendedForAppt: position.suspendPastor ? true : undefined,
             appointment:{ role:position.role, label:position.label, active:true,
               appointedOn:apptOn, appointedBy:"master" },
             appointmentHistory:[...(u.appointmentHistory||[]),
@@ -4235,7 +4245,8 @@ function MasterAppointments({ users, setUsers, toast, addLog }) {
           role:position.role, category:"office", _apptAccount:true,
           approved:true, mustChangePassword:true,
           photo:pastor.photo, signatureImage:pastor.signatureImage,
-          phone:pastor.phone, rank:pastor.rank, dept:"admin",
+          phone:pastor.phone, rank:pastor.rank,
+          dept: position.dept || "admin",
           appointedPastorId:pastor.id, appointedOn:apptOn, appointedBy:"master",
           docs:{}, customDocSections:[],
         }] : []
@@ -4255,8 +4266,11 @@ function MasterAppointments({ users, setUsers, toast, addLog }) {
       if(u.role===position.role && u.category==="office" && u._apptAccount)
         return { ...u, approved:false, suspendedOn:apptOn };
       // Clear appointment + temp pw from pastor profile
+      // If secretary, reactivate their pastor account
       if(u.id===pastorId)
         return { ...u, appointment:null, _apptTempPw:null, _apptTempEmail:null, _apptTempRole:null,
+          approved: u._suspendedForAppt ? true : u.approved,
+          _suspendedForAppt: undefined,
           appointmentHistory:[...(u.appointmentHistory||[]),
             { role:position.role, from:u.appointment?.appointedOn||"—", to:apptOn }] };
       return u;
