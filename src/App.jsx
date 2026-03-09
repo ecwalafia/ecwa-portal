@@ -2125,22 +2125,24 @@ function StaffProf({ staff, user, users, canEdit, canEditDetails, lccs, onClose,
                 {canAppointLO&&!isAlreadyLO&&!lccAlreadyHasLO&&<button className="btn btn-outline" style={{padding:"6px 14px",fontSize:12,color:"#2980b9",borderColor:"#2980b9"}} onClick={()=>setLoMode(true)}>🏘️ Appoint as LO</button>}
                 {canAppointLO&&!isAlreadyLO&&lccAlreadyHasLO&&lccAlreadyHasLO.id!==staff.id&&<span style={{fontSize:10,color:"rgba(255,255,255,0.3)",padding:"6px 0"}}>LCC already has an LO</span>}
                 {canAppointLO&&isAlreadyLO&&<button className="btn btn-red" style={{padding:"6px 14px",fontSize:12}} onClick={()=>{
-                  if(window.confirm("Revoke LO appointment for "+staff.name+"?"))
-                    onUpdate(staff.id,{appointment:null, loAppointment:null,
+                  if(window.confirm("Revoke LO appointment for "+staff.name+"?")){
+                    // Suspend the LO office account
+                    const loAcct=onGetUsers().find(u=>u.role==="lo"&&u._apptAccount);
+                    if(loAcct) onUpdateUser(loAcct.id,{approved:false,suspendedOn:today()});
+                    // Clear from pastor profile
+                    onUpdate(staff.id,{
+                      appointment:null, loAppointment:null,
+                      _apptTempPw:null, _apptTempEmail:null, _apptTempRole:null,
                       appointmentHistory:[...(staff.appointmentHistory||[]),
-                        {role:"lo",from:staff.appointment?.appointedOn||"—",to:today(),revokedBy:user.name}]});
+                        {role:"lo",from:staff.appointment?.appointedOn||"—",to:today()}]
+                    });
+                  }
                 }}>Revoke LO</button>}
               </div>
             </div>
           </div>
 
-          {/* LO appointment notice — visible only to the pastor himself */}
-          {isAlreadyLO&&staff.id===user.id&&(
-            <div style={{background:"linear-gradient(135deg,#eaf4fb,#d6eaf8)",border:"2px solid #2980b9",borderRadius:12,padding:"16px 18px",marginBottom:20}}>
-              <div style={{fontSize:13,fontWeight:700,color:"#1a5276",marginBottom:6}}>🏘️ You are the Local Overseer — {staff.appointment?.lcc_overseen||staff.lcc} LCC</div>
-              <div style={{fontSize:12,color:"#555"}}>You are already logged in with your LO access. Use the same email and password to access your LO dashboard.</div>
-            </div>
-          )}
+          {/* LO credentials shown on pastor's own profile — same as other appointments, handled by _apptTempPw block above */}
           {/* LO badge visible to admins/personnel viewing this pastor */}
           {isAlreadyLO&&staff.id!==user.id&&(
             <div style={{background:"#eaf4fb",border:"1px solid #aed6f1",borderRadius:8,padding:"10px 14px",marginBottom:16,fontSize:12,color:"#1a5276"}}>
@@ -2148,11 +2150,36 @@ function StaffProf({ staff, user, users, canEdit, canEditDetails, lccs, onClose,
             </div>
           )}
 
-          {/* Appointment notice — visible to the pastor himself */}
-          {staff.appointment?.active && staff.appointment?.role!=="lo" && staff.id===user.id&&(
+          {/* Appointment credentials — visible ONLY to the appointed pastor on their own profile */}
+          {staff._apptTempPw && staff.id===user.id &&(
             <div style={{background:"linear-gradient(135deg,#fef9ee,#fdf3d0)",border:"2px solid #c9a84c",borderRadius:12,padding:"16px 18px",marginBottom:20}}>
-              <div style={{fontSize:13,fontWeight:700,color:"#7d6008",marginBottom:6}}>👑 You are currently serving as {staff.appointment.label}</div>
-              <div style={{fontSize:12,color:"#666"}}>You are already logged in with your {staff.appointment.label} access. Use your same email and password — the system gives you the right dashboard automatically.</div>
+              <div style={{fontSize:13,fontWeight:700,color:"#7d6008",marginBottom:4}}>👑 Your {staff._apptTempRole} Login Credentials</div>
+              <div style={{fontSize:11,color:"#888",marginBottom:12}}>Use these to sign in as {staff._apptTempRole}. Your pastor account is separate and unchanged.</div>
+              <div style={{background:"#fff",borderRadius:8,padding:"12px 14px",display:"grid",gap:10}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                  <div>
+                    <div style={{fontSize:10,color:"#aaa",textTransform:"uppercase",letterSpacing:0.5,marginBottom:2}}>Login Email</div>
+                    <div style={{fontSize:14,fontWeight:700,color:"#0b1f3a"}}>{staff._apptTempEmail}</div>
+                  </div>
+                  <button onClick={()=>navigator.clipboard?.writeText(staff._apptTempEmail||"").then(()=>alert("Email copied!"))}
+                    style={{background:"#fef9ee",border:"1px solid #f0d060",color:"#7d6008",borderRadius:6,padding:"5px 12px",cursor:"pointer",fontSize:12,fontWeight:600}}>📋 Copy</button>
+                </div>
+                <div style={{borderTop:"1px solid #f5f5f5",paddingTop:10,display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                  <div>
+                    <div style={{fontSize:10,color:"#aaa",textTransform:"uppercase",letterSpacing:0.5,marginBottom:2}}>Temporary Password</div>
+                    <div style={{fontSize:16,fontWeight:700,color:"#0b1f3a",fontFamily:"monospace",letterSpacing:2}}>{staff._apptTempPw}</div>
+                  </div>
+                  <button onClick={()=>navigator.clipboard?.writeText(staff._apptTempPw||"").then(()=>alert("Password copied!"))}
+                    style={{background:"#fef9ee",border:"1px solid #f0d060",color:"#7d6008",borderRadius:6,padding:"5px 12px",cursor:"pointer",fontSize:12,fontWeight:600}}>📋 Copy</button>
+                </div>
+              </div>
+              <div style={{fontSize:11,color:"#c9a84c",marginTop:10,fontStyle:"italic"}}>⚠️ You will be asked to change this password on first login as {staff._apptTempRole}.</div>
+            </div>
+          )}
+          {/* Appointment badge visible to others */}
+          {staff.appointment?.active && staff.id!==user.id &&(
+            <div style={{background:"#fef9ee",border:"1px solid #f0d060",borderRadius:8,padding:"10px 14px",marginBottom:16,fontSize:12,color:"#7d6008"}}>
+              👑 <strong>{staff.name}</strong> is currently serving as <strong>{staff.appointment.label}</strong> since {fdate(staff.appointment.appointedOn)}
             </div>
           )}
           {/* Appointment badge visible to others */}
@@ -2174,9 +2201,33 @@ function StaffProf({ staff, user, users, canEdit, canEditDetails, lccs, onClose,
               </div>
               <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
                 <button className="btn btn-outline" onClick={()=>setLoMode(false)}>Cancel</button>
-                <button className="btn btn-gold" onClick={()=>{
-                  // Set appointment on pastor's own record — no separate account
+                <button className="btn btn-gold" onClick={async()=>{
+                  const chars="ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
+                  let tempPw="LO@"; for(let i=0;i<6;i++) tempPw+=chars[Math.floor(Math.random()*chars.length)];
+                  const hashed=await hashPassword(tempPw);
+                  const loAcctEmail="lo@ecwalafia.org";
+                  // Create/update separate LO office account
+                  const existingLO=onGetUsers().find(u=>u.role==="lo"&&u._apptAccount);
+                  if(existingLO){
+                    onUpdateUser(existingLO.id,{
+                      name:staff.name, password:hashed, approved:true, mustChangePassword:true,
+                      photo:staff.photo, signatureImage:staff.signatureImage,
+                      lcc_overseen:staff.lcc, appointedPastorId:staff.id, appointedOn:today()
+                    });
+                  } else {
+                    onAddUser({
+                      id:"APPT_lo", name:staff.name, email:loAcctEmail, password:hashed,
+                      role:"lo", category:"office", _apptAccount:true,
+                      approved:true, mustChangePassword:true,
+                      photo:staff.photo, signatureImage:staff.signatureImage,
+                      lcc_overseen:staff.lcc, lcc:staff.lcc,
+                      appointedPastorId:staff.id, appointedOn:today(), appointedBy:user.name,
+                      docs:{}, customDocSections:[],
+                    });
+                  }
+                  // Store temp credentials on pastor's own profile
                   onUpdate(staff.id,{
+                    _apptTempPw:tempPw, _apptTempEmail:loAcctEmail, _apptTempRole:"Local Overseer",
                     appointment:{ role:"lo", label:"Local Overseer", lcc_overseen:staff.lcc,
                       active:true, appointedBy:user.name, appointedOn:today() },
                     appointmentHistory:[...(staff.appointmentHistory||[]),
@@ -3500,12 +3551,6 @@ function SignIn({ users, setUsers, onLogin, onGo, pwdReqs, setPwdReqs }) {
     if(!ok){setEr("Incorrect password.");return;}
     if(!u.approved){setEr("Your account is pending admin approval.");return;}
     if(u.mustChangePassword){setChangeMode(u);return;}
-    // If pastor has an active appointment, log them in with that role
-    if(u.category==="pastor" && u.appointment?.active) {
-      onLogin({ ...u, role:u.appointment.role, _appointedRole:u.appointment.role,
-        _appointedLabel:u.appointment.label, _pastorId:u.id, _pastorRole:"pastor" });
-      return;
-    }
     onLogin(u);
   };
   return(
@@ -4128,43 +4173,96 @@ function MasterAppointments({ users, setUsers, toast, addLog }) {
     !filter || u.name?.toLowerCase().includes(filter.toLowerCase()) || u.lc_ph?.toLowerCase().includes(filter.toLowerCase())
   );
 
-  const appoint = (pastor, position) => {
-    const current = currentHolders[position.role];
-    const apptOn  = today();
-    // Single atomic update on pastor records only — no new accounts created
-    setUsers(us => us.map(u => {
-      // Clear appointment from old holder
-      if(current && u.id===current.id) {
-        return { ...u, appointment:null,
-          appointmentHistory:[...(u.appointmentHistory||[]),
-            { role:position.role, from:u.appointment?.appointedOn||"—", to:apptOn, revokedBy:"master" }] };
-      }
-      // Set appointment on new appointee — everything else stays the same
-      if(u.id===pastor.id) {
-        return { ...u,
-          appointment:{ role:position.role, label:position.label, active:true,
-            appointedOn:apptOn, appointedBy:"master" },
-          appointmentHistory:[...(u.appointmentHistory||[]),
-            { role:position.role, from:apptOn, to:null, appointedBy:"master" }] };
-      }
-      return u;
-    }));
+  // Fixed system emails per position
+  const APPT_EMAIL = {
+    chairman:"chairman@ecwalafia.org",
+    vice_chairman:"vicechairman@ecwalafia.org",
+    secretary:"secretary@ecwalafia.org",
+    ads:"ads@ecwalafia.org",
+    lo:"lo@ecwalafia.org",
+  };
+
+  const genPw = () => {
+    const c="ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
+    let p="ECWA@"; for(let i=0;i<6;i++) p+=c[Math.floor(Math.random()*c.length)]; return p;
+  };
+
+  const appoint = async (pastor, position) => {
+    const current   = currentHolders[position.role];
+    const apptEmail = APPT_EMAIL[position.role];
+    const tempPw    = genPw();
+    const hashed    = await hashPassword(tempPw);
+    const apptOn    = today();
+
+    setUsers(us => {
+      // Find existing office account for this role (may exist from a previous appointment)
+      const existingAcct = us.find(u => u.role===position.role && u.category==="office" && u._apptAccount);
+
+      return us.map(u => {
+        // 1. Clear appointment reference from old pastor holder
+        if(current && u.id===current.id) {
+          return { ...u,
+            _apptTempPw: null,  // clear their temp pw
+            appointment: null,
+            appointmentHistory:[...(u.appointmentHistory||[]),
+              { role:position.role, from:u.appointment?.appointedOn||"—", to:apptOn }] };
+        }
+        // 2. Update or suspend existing office account
+        if(existingAcct && u.id===existingAcct.id) {
+          // Reactivate with new appointee's biodata
+          return { ...u,
+            name:pastor.name, password:hashed, approved:true,
+            mustChangePassword:true, photo:pastor.photo||u.photo,
+            signatureImage:pastor.signatureImage||u.signatureImage,
+            phone:pastor.phone, rank:pastor.rank,
+            appointedPastorId:pastor.id, appointedOn:apptOn };
+        }
+        // 3. Store temp password on new appointee's pastor profile (visible only to them)
+        if(u.id===pastor.id) {
+          return { ...u,
+            _apptTempPw:tempPw, _apptTempEmail:apptEmail, _apptTempRole:position.label,
+            appointment:{ role:position.role, label:position.label, active:true,
+              appointedOn:apptOn, appointedBy:"master" },
+            appointmentHistory:[...(u.appointmentHistory||[]),
+              { role:position.role, from:apptOn, to:null }] };
+        }
+        return u;
+      }).concat(
+        // 4. If no existing office account, create one fresh
+        !existingAcct ? [{
+          id:"APPT_"+position.role,
+          name:pastor.name, email:apptEmail, password:hashed,
+          role:position.role, category:"office", _apptAccount:true,
+          approved:true, mustChangePassword:true,
+          photo:pastor.photo, signatureImage:pastor.signatureImage,
+          phone:pastor.phone, rank:pastor.rank, dept:"admin",
+          appointedPastorId:pastor.id, appointedOn:apptOn, appointedBy:"master",
+          docs:{}, customDocSections:[],
+        }] : []
+      );
+    });
+
     const replacedMsg = current ? " (replaced "+current.name+")" : "";
     addLog("APPOINT", "Appointed "+pastor.name+" as "+position.label+replacedMsg);
     setConfirming(null);
-    toast("✅ "+pastor.name+" appointed as "+position.label+". They log in with their existing email and password.");
+    toast("✅ "+pastor.name+" appointed as "+position.label+". Credentials now visible on their profile.");
   };
 
   const revert = (pastorId, position) => {
     const apptOn = today();
     setUsers(us => us.map(u => {
-      if(u.id!==pastorId) return u;
-      return { ...u, appointment:null,
-        appointmentHistory:[...(u.appointmentHistory||[]),
-          { role:position.role, from:u.appointment?.appointedOn||"—", to:apptOn, revokedBy:"master" }] };
+      // Suspend the office account
+      if(u.role===position.role && u.category==="office" && u._apptAccount)
+        return { ...u, approved:false, suspendedOn:apptOn };
+      // Clear appointment + temp pw from pastor profile
+      if(u.id===pastorId)
+        return { ...u, appointment:null, _apptTempPw:null, _apptTempEmail:null, _apptTempRole:null,
+          appointmentHistory:[...(u.appointmentHistory||[]),
+            { role:position.role, from:u.appointment?.appointedOn||"—", to:apptOn }] };
+      return u;
     }));
     addLog("REVERT", "Reverted "+position.label+" back to Pastor");
-    toast("✅ Reverted to Pastor.");
+    toast("✅ Reverted to Pastor. Office account suspended.");
   };
 
   return (
