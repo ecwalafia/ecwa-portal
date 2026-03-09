@@ -3548,8 +3548,8 @@ function SignIn({ users, setUsers, onLogin, onGo, pwdReqs, setPwdReqs }) {
       if(apptUser){
         const ok2 = await checkPassword(pw, apptUser.password);
         if(ok2){
-          if(apptUser.mustChangePassword){ setForcePwChange(apptUser); return; }
-          setMe({...apptUser, isMaster:false});
+          if(apptUser.mustChangePassword){ setChangeMode(apptUser); return; }
+          onLogin({...apptUser, isMaster:false});
           return;
         }
       }
