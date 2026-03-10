@@ -2151,11 +2151,11 @@ function StaffProf({ staff, user, users, canEdit, canEditDetails, lccs, onClose,
             </div>
           )}
 
-          {/* Appointment credentials — visible ONLY to the appointed pastor on their own profile */}
-          {staff._apptTempPw && staff.id===user.id &&(
+          {/* Appointment credentials — visible to the appointed pastor AND to master admin */}
+          {staff._apptTempPw && (staff.id===user.id || user.isMaster) &&(
             <div style={{background:"linear-gradient(135deg,#fef9ee,#fdf3d0)",border:"2px solid #c9a84c",borderRadius:12,padding:"16px 18px",marginBottom:20}}>
-              <div style={{fontSize:13,fontWeight:700,color:"#7d6008",marginBottom:4}}>👑 Your {staff._apptTempRole} Login Credentials</div>
-              <div style={{fontSize:11,color:"#888",marginBottom:12}}>Use these to sign in as {staff._apptTempRole}. Your pastor account is separate and unchanged.</div>
+              <div style={{fontSize:13,fontWeight:700,color:"#7d6008",marginBottom:4}}>👑 {user.isMaster && staff.id!==user.id ? staff.name+"'s" : "Your"} {staff._apptTempRole} Login Credentials</div>
+              <div style={{fontSize:11,color:"#888",marginBottom:12}}>{user.isMaster && staff.id!==user.id ? "Share these credentials with the appointee. They use these to sign in as "+staff._apptTempRole+"." : "Use these to sign in as "+staff._apptTempRole+". Your pastor account remains active."}</div>
               <div style={{background:"#fff",borderRadius:8,padding:"12px 14px",display:"grid",gap:10}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
                   <div>
@@ -3550,7 +3550,14 @@ function SignIn({ users, setUsers, onLogin, onGo, pwdReqs, setPwdReqs }) {
     }
     const ok = await checkPassword(pw, u.password);
     if(!ok){setEr("Incorrect password.");return;}
-    if(!u.approved){setEr("Your account is pending admin approval.");return;}
+    if(!u.approved){
+      if(u._suspendedForAppt){
+        setEr("Your pastor account is suspended during your "+(u.appointment?.label||"appointment")+" tenure. Please sign in with your "+(u.appointment?.label||"office")+" account credentials instead.");
+      } else {
+        setEr("Your account is pending admin approval.");
+      }
+      return;
+    }
     if(u.mustChangePassword){setChangeMode(u);return;}
     onLogin(u);
   };
@@ -5097,60 +5104,38 @@ function Dashboard({ user, users, setUsers, requests, setRequests, leaves, setLe
 let _sbSaving = false;
 const _sbTimers = {};
 
-// ── Excel archive export (no library needed) ──────────────────────────────────
 function _exportArchiveExcel(oldAttendance, oldSundayReports) {
   const sheets = [];
   if (oldAttendance.length > 0) {
-    const headers = ["Date","Staff Name","Email","Dept","Clock In","Clock Out","Achievements","Challenges","Tomorrow Plan"];
-    const rows = oldAttendance.map(r => [
-      r.date, r.userName, r.userEmail, r.dept,
-      r.clockIn||"", r.clockOut||"",
-      r.dailyReport?.achievements||"",
-      r.dailyReport?.challenges||"",
-      r.dailyReport?.tomorrowPlan||""
-    ]);
-    sheets.push({ name:"Attendance Archive", headers, rows });
+    sheets.push({
+      name:"Attendance Archive",
+      headers:["Date","Staff Name","Email","Dept","Clock In","Clock Out","Achievements","Challenges","Tomorrow Plan"],
+      rows:oldAttendance.map(r=>[r.date,r.userName,r.userEmail,r.dept,r.clockIn||"",r.clockOut||"",r.dailyReport?.achievements||"",r.dailyReport?.challenges||"",r.dailyReport?.tomorrowPlan||""])
+    });
   }
   if (oldSundayReports.length > 0) {
-    const headers = ["Date","Pastor","LCC","Church","Men","Women","Children","Offering","Tithes","Thanksgiving","Freewill","Total","Remittance Due"];
-    const rows = oldSundayReports.map(r => [
-      r.date, r.pastorName, r.lcc, r.lc_ph,
-      r.attendance?.men||0, r.attendance?.women||0, r.attendance?.children||0,
-      r.collections?.offering||0, r.collections?.tithes||0,
-      r.collections?.thanksgiving||0, r.collections?.freewill||0,
-      r.totalGross||0, r.remittanceDue||0
-    ]);
-    sheets.push({ name:"Sunday Reports Archive", headers, rows });
+    sheets.push({
+      name:"Sunday Reports Archive",
+      headers:["Date","Pastor","LCC","Church","Men","Women","Children","Offering","Tithes","Thanksgiving","Freewill","Total","Remittance Due"],
+      rows:oldSundayReports.map(r=>[r.date,r.pastorName,r.lcc,r.lc_ph,r.attendance?.men||0,r.attendance?.women||0,r.attendance?.children||0,r.collections?.offering||0,r.collections?.tithes||0,r.collections?.thanksgiving||0,r.collections?.freewill||0,r.totalGross||0,r.remittanceDue||0])
+    });
   }
-  if (sheets.length === 0) return;
-
+  if (!sheets.length) return;
   const xml = [`<?xml version="1.0"?><Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">`];
-  for (const { name, headers, rows } of sheets) {
+  for (const {name,headers,rows} of sheets) {
     xml.push(`<Worksheet ss:Name="${name}"><Table>`);
     xml.push(`<Row>${headers.map(h=>`<Cell><Data ss:Type="String"><![CDATA[${h}]]></Data></Cell>`).join("")}</Row>`);
-    for (const row of rows) {
-      xml.push(`<Row>${row.map(c=>{
-        const v = c===null||c===undefined?"":String(c);
-        const t = typeof c==="number"?"Number":"String";
-        return `<Cell><Data ss:Type="${t}"><![CDATA[${v}]]></Data></Cell>`;
-      }).join("")}</Row>`);
-    }
+    for (const row of rows) xml.push(`<Row>${row.map(c=>`<Cell><Data ss:Type="${typeof c==="number"?"Number":"String"}"><![CDATA[${c===null||c===undefined?"":String(c)}]]></Data></Cell>`).join("")}</Row>`);
     xml.push(`</Table></Worksheet>`);
   }
   xml.push(`</Workbook>`);
-
-  const blob = new Blob([xml.join("")], { type:"application/vnd.ms-excel" });
+  const blob = new Blob([xml.join("")],{type:"application/vnd.ms-excel"});
   const url  = URL.createObjectURL(blob);
   const a    = document.createElement("a");
-  a.href     = url;
-  a.download = `ECWA_Lafia_Archive_${new Date().toISOString().slice(0,10)}.xls`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  a.href=url; a.download=`ECWA_Lafia_Archive_${new Date().toISOString().slice(0,10)}.xls`;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
 }
 
-// Track which keys have already been archived this session so we don't re-prompt
 const _archivedKeys = new Set();
 
 function sbSave(key, value) {
@@ -5159,54 +5144,37 @@ function sbSave(key, value) {
     _sbSaving = true;
     try {
       let payload = value;
-
-      // ── Users: strip signatures completely (up to 300KB each — kills DB) ──
       if (key === "users" && Array.isArray(value)) {
         payload = value.map(u => ({ ...u, signatureImage: null }));
       }
-
-      // ── Attendance: trim to 90 days, archive old records first ──
       if (key === "attendance" && Array.isArray(value)) {
-        const cutoff = new Date();
-        cutoff.setDate(cutoff.getDate() - 90);
-        const cutoffStr = cutoff.toISOString().slice(0, 10);
-        const old = value.filter(r => r.date < cutoffStr);
-        payload   = value.filter(r => r.date >= cutoffStr);
-        if (old.length > 0 && !_archivedKeys.has("attendance")) {
+        const cutoff = new Date(); cutoff.setDate(cutoff.getDate()-90);
+        const cutoffStr = cutoff.toISOString().slice(0,10);
+        const old = value.filter(r=>r.date<cutoffStr);
+        payload   = value.filter(r=>r.date>=cutoffStr);
+        if (old.length>0 && !_archivedKeys.has("attendance")) {
           _archivedKeys.add("attendance");
-          const confirmed = window.confirm(
-            `📦 Archive Notice
+          if (window.confirm(`📦 ${old.length} attendance record(s) older than 90 days will be removed.
 
-${old.length} attendance record(s) older than 90 days are about to be removed from the database to keep it healthy.
-
-Click OK to download an Excel archive first, or Cancel to trim without saving.`
-          );
-          if (confirmed) _exportArchiveExcel(old, []);
+Click OK to download an Excel archive first, or Cancel to trim without saving.`))
+            _exportArchiveExcel(old,[]);
         }
       }
-
-      // ── Sunday Reports: trim to 1 year, archive old records first ──
       if (key === "sundayReports" && Array.isArray(value)) {
-        const cutoff = new Date();
-        cutoff.setDate(cutoff.getDate() - 365);
-        const cutoffStr = cutoff.toISOString().slice(0, 10);
-        const old = value.filter(r => r.date < cutoffStr);
-        payload   = value.filter(r => r.date >= cutoffStr);
-        if (old.length > 0 && !_archivedKeys.has("sundayReports")) {
+        const cutoff = new Date(); cutoff.setDate(cutoff.getDate()-365);
+        const cutoffStr = cutoff.toISOString().slice(0,10);
+        const old = value.filter(r=>r.date<cutoffStr);
+        payload   = value.filter(r=>r.date>=cutoffStr);
+        if (old.length>0 && !_archivedKeys.has("sundayReports")) {
           _archivedKeys.add("sundayReports");
-          const confirmed = window.confirm(
-            `📦 Archive Notice
+          if (window.confirm(`📦 ${old.length} Sunday report(s) older than 1 year will be removed.
 
-${old.length} Sunday report(s) older than 1 year are about to be removed from the database.
-
-Click OK to download an Excel archive first, or Cancel to trim without saving.`
-          );
-          if (confirmed) _exportArchiveExcel([], old);
+Click OK to download an Excel archive first, or Cancel to trim without saving.`))
+            _exportArchiveExcel([],old);
         }
       }
-
       const { error } = await supabase.from("app_state")
-        .upsert({ key, value: payload, updated_at: new Date().toISOString() }, { onConflict: "key" });
+        .upsert({ key, value: payload, updated_at: new Date().toISOString() }, { onConflict:"key" });
       if (error) console.error("Supabase save error:", key, error.message);
     } catch(e) { console.error("Supabase save error:", key, e); }
     finally { _sbSaving = false; }
