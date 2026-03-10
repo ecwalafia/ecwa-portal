@@ -4264,24 +4264,27 @@ function MasterAppointments({ users, setUsers, toast, addLog }) {
     addLog("APPOINT", "Appointed "+pastor.name+" as "+position.label+replacedMsg);
     setConfirming(null);
 
-    // ── Immediate direct save — do NOT wait for the 2s debounce ──
-    // Appointments must reach DB instantly so they survive a page refresh
+    // ── Immediate direct save — use local state captured during setUsers ──
+    // Build the updated array the same way setUsers does, then save it straight to DB
     try {
-      // Read the latest users state after setUsers (functional update already applied)
-      // We re-derive the updated array here to save immediately
-      const { data: cur } = await supabase.from("app_state").select("value").eq("key","users").single();
-      const base = (cur?.value && Array.isArray(cur.value)) ? cur.value : [];
-      // Merge: apply the same appointment logic to the DB-fresh base
-      const existingAcct = base.find(u => u.role===position.role && u.category==="office" && u._apptAccount);
-      let updated = base.map(u => {
-        if(current && u.id===current.id) return {...u, _apptTempPw:null, appointment:null, approved: u._suspendedForAppt?true:u.approved, _suspendedForAppt:undefined, appointmentHistory:[...(u.appointmentHistory||[]),{role:position.role,from:u.appointment?.appointedOn||"—",to:apptOn}]};
-        if(existingAcct && u.id===existingAcct.id) return {...u, name:pastor.name, password:hashed, approved:true, mustChangePassword:true, photo:pastor.photo||u.photo, signatureImage:null, phone:pastor.phone, rank:pastor.rank, appointedPastorId:pastor.id, appointedOn:apptOn};
-        if(u.id===pastor.id) return {...u, _apptTempPw:tempPw, _apptTempEmail:apptEmail, _apptTempRole:position.label, signatureImage:null, approved:position.suspendPastor?false:u.approved, _suspendedForAppt:position.suspendPastor?true:undefined, appointment:{role:position.role,label:position.label,active:true,appointedOn:apptOn,appointedBy:"master"}, appointmentHistory:[...(u.appointmentHistory||[]),{role:position.role,from:apptOn,to:null}]};
-        return {...u, signatureImage:null, photo:null};
+      const latestUsers = await new Promise(resolve => {
+        setUsers(prev => {
+          const existingAcct = prev.find(u => u.role===position.role && u.category==="office" && u._apptAccount);
+          let next = prev.map(u => {
+            if(current && u.id===current.id) return {...u, _apptTempPw:null, appointment:null, approved:u._suspendedForAppt?true:u.approved, _suspendedForAppt:undefined, appointmentHistory:[...(u.appointmentHistory||[]),{role:position.role,from:u.appointment?.appointedOn||"—",to:apptOn}]};
+            if(existingAcct && u.id===existingAcct.id) return {...u, name:pastor.name, password:hashed, approved:true, mustChangePassword:true, photo:u.photo, signatureImage:u.signatureImage, phone:pastor.phone, rank:pastor.rank, appointedPastorId:pastor.id, appointedOn:apptOn};
+            if(u.id===pastor.id) return {...u, _apptTempPw:tempPw, _apptTempEmail:apptEmail, _apptTempRole:position.label, approved:position.suspendPastor?false:u.approved, _suspendedForAppt:position.suspendPastor?true:undefined, appointment:{role:position.role,label:position.label,active:true,appointedOn:apptOn,appointedBy:"master"}, appointmentHistory:[...(u.appointmentHistory||[]),{role:position.role,from:apptOn,to:null}]};
+            return u;
+          });
+          if(!existingAcct) next = next.concat([{id:"APPT_"+position.role, name:pastor.name, email:apptEmail, password:hashed, role:position.role, category:"office", _apptAccount:true, approved:true, mustChangePassword:true, signatureImage:null, photo:null, phone:pastor.phone, rank:pastor.rank, dept:position.dept||"admin", appointedPastorId:pastor.id, appointedOn:apptOn, appointedBy:"master", docs:{}, customDocSections:[]}]);
+          resolve(next);
+          return next;
+        });
       });
-      if(!existingAcct) updated = updated.concat([{id:"APPT_"+position.role, name:pastor.name, email:apptEmail, password:hashed, role:position.role, category:"office", _apptAccount:true, approved:true, mustChangePassword:true, signatureImage:null, phone:pastor.phone, rank:pastor.rank, dept:position.dept||"admin", appointedPastorId:pastor.id, appointedOn:apptOn, appointedBy:"master", docs:{}, customDocSections:[]}]);
+      // Strip assets before saving to DB
+      const payload = latestUsers.map(u => ({...u, photo:null, signatureImage:null}));
       const { error: saveErr } = await supabase.from("app_state")
-        .upsert({ key:"users", value:updated, updated_at:new Date().toISOString() }, { onConflict:"key" });
+        .upsert({ key:"users", value:payload, updated_at:new Date().toISOString() }, { onConflict:"key" });
       if(saveErr) { console.error("Appointment save error:", saveErr.message); toast("⚠️ Appointment made but DB save failed: "+saveErr.message, "danger"); }
       else toast("✅ "+pastor.name+" appointed as "+position.label+". Credentials now visible on their profile.");
     } catch(e) {
