@@ -4277,7 +4277,7 @@ function MasterAppointments({ users, setUsers, toast, addLog }) {
         if(current && u.id===current.id) return {...u, _apptTempPw:null, appointment:null, approved: u._suspendedForAppt?true:u.approved, _suspendedForAppt:undefined, appointmentHistory:[...(u.appointmentHistory||[]),{role:position.role,from:u.appointment?.appointedOn||"—",to:apptOn}]};
         if(existingAcct && u.id===existingAcct.id) return {...u, name:pastor.name, password:hashed, approved:true, mustChangePassword:true, photo:pastor.photo||u.photo, signatureImage:null, phone:pastor.phone, rank:pastor.rank, appointedPastorId:pastor.id, appointedOn:apptOn};
         if(u.id===pastor.id) return {...u, _apptTempPw:tempPw, _apptTempEmail:apptEmail, _apptTempRole:position.label, signatureImage:null, approved:position.suspendPastor?false:u.approved, _suspendedForAppt:position.suspendPastor?true:undefined, appointment:{role:position.role,label:position.label,active:true,appointedOn:apptOn,appointedBy:"master"}, appointmentHistory:[...(u.appointmentHistory||[]),{role:position.role,from:apptOn,to:null}]};
-        return {...u, signatureImage:null};
+        return {...u, signatureImage:null, photo:null};
       });
       if(!existingAcct) updated = updated.concat([{id:"APPT_"+position.role, name:pastor.name, email:apptEmail, password:hashed, role:position.role, category:"office", _apptAccount:true, approved:true, mustChangePassword:true, signatureImage:null, phone:pastor.phone, rank:pastor.rank, dept:position.dept||"admin", appointedPastorId:pastor.id, appointedOn:apptOn, appointedBy:"master", docs:{}, customDocSections:[]}]);
       const { error: saveErr } = await supabase.from("app_state")
@@ -5197,7 +5197,7 @@ function sbSave(key, value) {
     try {
       let payload = value;
       if (key === "users" && Array.isArray(value)) {
-        payload = value.map(u => ({ ...u, signatureImage: null }));
+        payload = value.map(u => ({ ...u, signatureImage: null, photo: null }));
       }
       if (key === "attendance" && Array.isArray(value)) {
         const cutoff = new Date(); cutoff.setDate(cutoff.getDate()-90);
