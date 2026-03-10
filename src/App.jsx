@@ -5197,7 +5197,19 @@ function sbSave(key, value) {
     try {
       let payload = value;
       if (key === "users" && Array.isArray(value)) {
+        // Strip large assets from the main users row — store separately in user_assets
         payload = value.map(u => ({ ...u, signatureImage: null, photo: null }));
+        // Save photos + signatures to a separate table keyed by user id
+        const assets = value
+          .filter(u => u.photo || u.signatureImage)
+          .map(u => ({ user_id: String(u.id), photo: u.photo||null, signature: u.signatureImage||null }));
+        if (assets.length > 0) {
+          for (const asset of assets) {
+            supabase.from("user_assets")
+              .upsert(asset, { onConflict: "user_id" })
+              .then(({ error }) => { if (error) console.error("Asset save error:", asset.user_id, error.message); });
+          }
+        }
       }
       if (key === "attendance" && Array.isArray(value)) {
         const cutoff = new Date(); cutoff.setDate(cutoff.getDate()-90);
@@ -5297,7 +5309,25 @@ export default function App() {
         if (error) { console.error("Load error:", error); setLoading(false); return; }
         if (data && data.length > 0) {
           const map = Object.fromEntries(data.map(r => [r.key, r.value]));
-          if (map.users)         setUsers(map.users);
+          if (map.users) {
+            // Merge photos + signatures back from user_assets table
+            try {
+              const { data: assets } = await supabase.from("user_assets").select("*");
+              if (assets && assets.length > 0) {
+                const assetMap = Object.fromEntries(assets.map(a => [String(a.user_id), a]));
+                const merged = map.users.map(u => {
+                  const a = assetMap[String(u.id)];
+                  return a ? { ...u, photo: a.photo||null, signatureImage: a.signature||null } : u;
+                });
+                setUsers(merged);
+              } else {
+                setUsers(map.users);
+              }
+            } catch(e) {
+              console.error("Asset load error:", e);
+              setUsers(map.users);
+            }
+          }
           if (map.requests)      setReqs(map.requests);
           if (map.leaves)        setLeaves(map.leaves);
           if (map.sundayReports) setSundayReports(map.sundayReports);
