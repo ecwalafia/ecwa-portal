@@ -4263,7 +4263,31 @@ function MasterAppointments({ users, setUsers, toast, addLog }) {
     const replacedMsg = current ? " (replaced "+current.name+")" : "";
     addLog("APPOINT", "Appointed "+pastor.name+" as "+position.label+replacedMsg);
     setConfirming(null);
-    toast("✅ "+pastor.name+" appointed as "+position.label+". Credentials now visible on their profile.");
+
+    // ── Immediate direct save — do NOT wait for the 2s debounce ──
+    // Appointments must reach DB instantly so they survive a page refresh
+    try {
+      // Read the latest users state after setUsers (functional update already applied)
+      // We re-derive the updated array here to save immediately
+      const { data: cur } = await supabase.from("app_state").select("value").eq("key","users").single();
+      const base = (cur?.value && Array.isArray(cur.value)) ? cur.value : [];
+      // Merge: apply the same appointment logic to the DB-fresh base
+      const existingAcct = base.find(u => u.role===position.role && u.category==="office" && u._apptAccount);
+      let updated = base.map(u => {
+        if(current && u.id===current.id) return {...u, _apptTempPw:null, appointment:null, approved: u._suspendedForAppt?true:u.approved, _suspendedForAppt:undefined, appointmentHistory:[...(u.appointmentHistory||[]),{role:position.role,from:u.appointment?.appointedOn||"—",to:apptOn}]};
+        if(existingAcct && u.id===existingAcct.id) return {...u, name:pastor.name, password:hashed, approved:true, mustChangePassword:true, photo:pastor.photo||u.photo, signatureImage:null, phone:pastor.phone, rank:pastor.rank, appointedPastorId:pastor.id, appointedOn:apptOn};
+        if(u.id===pastor.id) return {...u, _apptTempPw:tempPw, _apptTempEmail:apptEmail, _apptTempRole:position.label, signatureImage:null, approved:position.suspendPastor?false:u.approved, _suspendedForAppt:position.suspendPastor?true:undefined, appointment:{role:position.role,label:position.label,active:true,appointedOn:apptOn,appointedBy:"master"}, appointmentHistory:[...(u.appointmentHistory||[]),{role:position.role,from:apptOn,to:null}]};
+        return {...u, signatureImage:null};
+      });
+      if(!existingAcct) updated = updated.concat([{id:"APPT_"+position.role, name:pastor.name, email:apptEmail, password:hashed, role:position.role, category:"office", _apptAccount:true, approved:true, mustChangePassword:true, signatureImage:null, phone:pastor.phone, rank:pastor.rank, dept:position.dept||"admin", appointedPastorId:pastor.id, appointedOn:apptOn, appointedBy:"master", docs:{}, customDocSections:[]}]);
+      const { error: saveErr } = await supabase.from("app_state")
+        .upsert({ key:"users", value:updated, updated_at:new Date().toISOString() }, { onConflict:"key" });
+      if(saveErr) { console.error("Appointment save error:", saveErr.message); toast("⚠️ Appointment made but DB save failed: "+saveErr.message, "danger"); }
+      else toast("✅ "+pastor.name+" appointed as "+position.label+". Credentials now visible on their profile.");
+    } catch(e) {
+      console.error("Appointment save error:", e);
+      toast("⚠️ Appointment made locally but could not reach database. Please do not refresh.", "danger");
+    }
   };
 
   const revert = (pastorId, position) => {
@@ -4674,6 +4698,34 @@ function MasterStaff({ users, setUsers, toast, addLog }) {
           <button onClick={()=>setSel(null)} style={{background:"none",border:"none",color:"#c9a84c",cursor:"pointer",fontSize:13,marginBottom:16}}>← Back to list</button>
           <div style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:12,padding:20}}>
             <div style={{color:"#c9a84c",fontWeight:700,fontSize:15,marginBottom:16}}>Editing: {sel.name}</div>
+
+            {/* ── Appointment credentials — master can see and share with appointee ── */}
+            {sel._apptTempPw&&(
+              <div style={{background:"linear-gradient(135deg,#fef9ee,#fdf3d0)",border:"2px solid #c9a84c",borderRadius:12,padding:"16px 18px",marginBottom:20}}>
+                <div style={{fontSize:13,fontWeight:700,color:"#7d6008",marginBottom:4}}>👑 {sel.name}'s {sel._apptTempRole} Login Credentials</div>
+                <div style={{fontSize:11,color:"#888",marginBottom:12}}>Share these with the appointee. They use these to sign in as {sel._apptTempRole}.</div>
+                <div style={{background:"#fff",borderRadius:8,padding:"12px 14px",display:"grid",gap:10}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                    <div>
+                      <div style={{fontSize:10,color:"#aaa",textTransform:"uppercase",letterSpacing:0.5,marginBottom:2}}>Login Email</div>
+                      <div style={{fontSize:14,fontWeight:700,color:"#0b1f3a"}}>{sel._apptTempEmail}</div>
+                    </div>
+                    <button onClick={()=>navigator.clipboard?.writeText(sel._apptTempEmail||"").then(()=>alert("Email copied!"))}
+                      style={{background:"#fef9ee",border:"1px solid #f0d060",color:"#7d6008",borderRadius:6,padding:"5px 12px",cursor:"pointer",fontSize:12,fontWeight:600}}>📋 Copy</button>
+                  </div>
+                  <div style={{borderTop:"1px solid #f5f5f5",paddingTop:10,display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                    <div>
+                      <div style={{fontSize:10,color:"#aaa",textTransform:"uppercase",letterSpacing:0.5,marginBottom:2}}>Temporary Password</div>
+                      <div style={{fontSize:16,fontWeight:700,color:"#0b1f3a",fontFamily:"monospace",letterSpacing:2}}>{sel._apptTempPw}</div>
+                    </div>
+                    <button onClick={()=>navigator.clipboard?.writeText(sel._apptTempPw||"").then(()=>alert("Password copied!"))}
+                      style={{background:"#fef9ee",border:"1px solid #f0d060",color:"#7d6008",borderRadius:6,padding:"5px 12px",cursor:"pointer",fontSize:12,fontWeight:600}}>📋 Copy</button>
+                  </div>
+                </div>
+                <div style={{fontSize:11,color:"#c9a84c",marginTop:10,fontStyle:"italic"}}>⚠️ They will be asked to change this password on first login as {sel._apptTempRole}.</div>
+              </div>
+            )}
+
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
               {[["name","Full Name"],["email","Email"],["phone","Phone"],["jobTitle","Job Title"],["dept","Department"],["gradeLevel","Grade Level"],["dob","Date of Birth"],["doj","Date Joined"]].map(([k,label])=>(
                 <div key={k}><label style={{fontSize:11,color:"rgba(255,255,255,0.5)",display:"block",marginBottom:4}}>{label}</label><input value={form[k]||""} onChange={sf(k)} type={k==="dob"||k==="doj"?"date":"text"} style={{background:"#1a1a2e",color:"#fff",border:"1px solid rgba(255,255,255,0.2)",borderRadius:8,padding:"7px 10px",width:"100%",boxSizing:"border-box",fontSize:12}}/></div>
