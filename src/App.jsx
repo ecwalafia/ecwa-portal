@@ -1384,18 +1384,25 @@ function LeaveMod({ user, users, leaves, setLeaves, toast, openRecordId, onRecor
     return false;
   }).length;
 
-  const addLeave=(f)=>{
+  const addLeave=async (f)=>{
     const id="LV-"+String(leaves.length+1).padStart(3,"0");
     const days=Math.max(1,Math.round((new Date(f.endDate)-new Date(f.startDate))/(1000*60*60*24))+1);
     const deptForUser = user.category==="office"?user.dept:null;
-    setLeaves(l=>[...l,{
+    const newLeave = {
       id, refNo:`LV-${new Date().getFullYear()}-${String(leaves.length+1).padStart(3,"0")}`,
       requester:user.name, requesterEmail:user.email, requester_role:user.role,
       lcc:user.lcc||null, lc_ph:user.lc_ph||null, rank:user.rank||null,
       dept:deptForUser, type:f.type, startDate:f.startDate, endDate:f.endDate,
       days, reason:f.reason, status:"pending_dept",
       allowance:null, approvals:[], date:today(), appeal:null,
-    }]);
+    };
+    const latestLeaves = await new Promise(resolve => {
+      setLeaves(l => { const next=[...l, newLeave]; resolve(next); return next; });
+    });
+    // Save immediately to DB — do not wait for 2s debounce
+    try {
+      await supabase.from("app_state").upsert({ key:"leaves", value:latestLeaves, updated_at:new Date().toISOString() }, { onConflict:"key" });
+    } catch(e) { console.error("Leave save error:", e); }
     toast("✅ Leave request submitted.");setForm(false);
   };
 
@@ -2100,22 +2107,8 @@ function StaffProf({ staff, user, users, canEdit, canEditDetails, lccs, onClose,
               <div style={{display:"flex",gap:6,flexWrap:"wrap",justifyContent:"flex-end"}}>
                 {canEdit&&!editing&&<button className="btn btn-gold" style={{padding:"6px 14px",fontSize:12}} onClick={()=>setEditing(true)}>✏️ {isSelfEdit?"Fill My Bio Data":"Edit"}</button>}
                 {canTransfer&&!transferMode&&<button className="btn btn-outline" style={{padding:"6px 14px",fontSize:12,color:"#c9a84c",borderColor:"#c9a84c"}} onClick={()=>setTransferMode(true)}>🔄 Transfer</button>}
-                {canAppointLO&&!isAlreadyLO&&!lccAlreadyHasLO&&<button className="btn btn-outline" style={{padding:"6px 14px",fontSize:12,color:"#2980b9",borderColor:"#2980b9"}} onClick={()=>setLoMode(true)}>🏘️ Appoint as LO</button>}
-                {canAppointLO&&!isAlreadyLO&&lccAlreadyHasLO&&lccAlreadyHasLO.id!==staff.id&&<span style={{fontSize:10,color:"rgba(255,255,255,0.3)",padding:"6px 0"}}>LCC already has an LO</span>}
-                {canAppointLO&&isAlreadyLO&&<button className="btn btn-red" style={{padding:"6px 14px",fontSize:12}} onClick={()=>{
-                  if(window.confirm("Revoke LO appointment for "+staff.name+"?")){
-                    // Suspend the LO office account
-                    const loAcct=onGetUsers().find(u=>u.role==="lo"&&u._apptAccount);
-                    if(loAcct) onUpdateUser(loAcct.id,{approved:false,suspendedOn:today()});
-                    // Clear from pastor profile
-                    onUpdate(staff.id,{
-                      appointment:null, loAppointment:null,
-                      _apptTempPw:null, _apptTempEmail:null, _apptTempRole:null,
-                      appointmentHistory:[...(staff.appointmentHistory||[]),
-                        {role:"lo",from:staff.appointment?.appointedOn||"—",to:today()}]
-                    });
-                  }
-                }}>Revoke LO</button>}
+                {/* LO appointment is handled via the dedicated LO Appointments panel (Master / Personnel) */}
+                {/* LO revoke handled via the LO Appointments panel (Master / Personnel) */}
               </div>
             </div>
           </div>
@@ -2167,55 +2160,7 @@ function StaffProf({ staff, user, users, canEdit, canEditDetails, lccs, onClose,
             </div>
           )}
 
-          {/* LO Appointment Panel */}
-          {loMode&&(
-            <div style={{background:"#eaf4fb",border:"2px solid #2980b9",borderRadius:12,padding:20,marginBottom:24}}>
-              <div style={{fontSize:13,fontWeight:700,color:"#0b1f3a",marginBottom:6}}>🏘️ Appoint as Local Overseer</div>
-              <div style={{fontSize:12,color:"#555",marginBottom:14,lineHeight:1.7}}>
-                Appointing <strong>{staff.name}</strong> as Local Overseer for <strong>{staff.lcc} LCC</strong>.
-              </div>
-              <div className="info-box" style={{marginBottom:14}}>
-                ✅ They log in with their existing email and password. Their pastor profile stays exactly as it is. They will see the LO dashboard when they log in.
-              </div>
-              <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
-                <button className="btn btn-outline" onClick={()=>setLoMode(false)}>Cancel</button>
-                <button className="btn btn-gold" onClick={async()=>{
-                  const chars="ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
-                  let tempPw="LO@"; for(let i=0;i<6;i++) tempPw+=chars[Math.floor(Math.random()*chars.length)];
-                  const hashed=await hashPassword(tempPw);
-                  const loAcctEmail="lo@ecwalafia.org";
-                  // Create/update separate LO office account
-                  const existingLO=onGetUsers().find(u=>u.role==="lo"&&u._apptAccount);
-                  if(existingLO){
-                    onUpdateUser(existingLO.id,{
-                      name:staff.name, password:hashed, approved:true, mustChangePassword:true,
-                      photo:staff.photo, signatureImage:staff.signatureImage,
-                      lcc_overseen:staff.lcc, appointedPastorId:staff.id, appointedOn:today()
-                    });
-                  } else {
-                    onAddUser({
-                      id:"APPT_lo", name:staff.name, email:loAcctEmail, password:hashed,
-                      role:"lo", category:"office", _apptAccount:true,
-                      approved:true, mustChangePassword:true,
-                      photo:staff.photo, signatureImage:staff.signatureImage,
-                      lcc_overseen:staff.lcc, lcc:staff.lcc,
-                      appointedPastorId:staff.id, appointedOn:today(), appointedBy:user.name,
-                      docs:{}, customDocSections:[],
-                    });
-                  }
-                  // Store temp credentials on pastor's own profile
-                  onUpdate(staff.id,{
-                    _apptTempPw:tempPw, _apptTempEmail:loAcctEmail, _apptTempRole:"Local Overseer",
-                    appointment:{ role:"lo", label:"Local Overseer", lcc_overseen:staff.lcc,
-                      active:true, appointedBy:user.name, appointedOn:today() },
-                    appointmentHistory:[...(staff.appointmentHistory||[]),
-                      { role:"lo", from:today(), to:null, appointedBy:user.name }]
-                  });
-                  setLoMode(false);
-                }}>✅ Confirm Appointment →</button>
-              </div>
-            </div>
-          )}
+          {/* LO appointment is now handled via the dedicated LO Appointments panel (Master / Personnel Officer) */}
 
           {/* Transfer Panel */}
           {transferMode&&(
@@ -3494,7 +3439,16 @@ function SignIn({ users, setUsers, onLogin, onGo, pwdReqs, setPwdReqs }) {
           if(newPw.length<6){setEr("Password must be at least 6 characters.");return;}
           if(newPw!==newPw2){setEr("Passwords do not match.");return;}
           const hashedPw = await hashPassword(newPw);
+          // Update local state
           setUsers(us=>us.map(u=>u.id===changeMode.id?{...u,password:hashedPw,mustChangePassword:false}:u));
+          // Save immediately to DB so password survives refresh
+          try {
+            const { data: cur } = await supabase.from("app_state").select("value").eq("key","users").single();
+            if(cur?.value) {
+              const updated = cur.value.map(u => u.id===changeMode.id ? {...u, password:hashedPw, mustChangePassword:false} : u);
+              await supabase.from("app_state").upsert({ key:"users", value:updated, updated_at:new Date().toISOString() }, { onConflict:"key" });
+            }
+          } catch(e) { console.error("Password save error:", e); }
           onLogin({...changeMode,password:hashedPw,mustChangePassword:false});
         }}>Save New Password & Sign In →</button>
       </div>
@@ -4325,7 +4279,7 @@ function MasterAppointments({ users, setUsers, toast, addLog }) {
     { role:"secretary",    label:"Secretary",                   icon:"📋", color:"#2980b9", suspendPastor:true },
     { role:"ads",          label:"ADS",                        icon:"📌", color:"#8e44ad" },
     { role:"ceo",          label:"CEO (Christian Ed. Organizer)",icon:"🎓", color:"#16a085", dept:"education" },
-    { role:"lo",           label:"Local Overseer (LO)",         icon:"🏘️", color:"#27ae60" },
+    // LO is handled separately via LOAppointments panel (one per LCC)
   ];
 
   // Current holders — find pastor with active appointment for each role
@@ -4350,7 +4304,7 @@ function MasterAppointments({ users, setUsers, toast, addLog }) {
     secretary:"secretary@ecwalafia.org",
     ads:"ads@ecwalafia.org",
     ceo:"ceo@ecwalafia.org",
-    lo:"lo@ecwalafia.org",
+    // lo: handled by LOAppointments
   };
 
   const genPw = () => {
@@ -5143,7 +5097,7 @@ function Dashboard({ user, users, setUsers, requests, setRequests, leaves, setLe
   const isLO     = user.role==="lo";
 
   const isMaster = user.isMaster===true;
-  const canF = isOffice||isMaster;
+  const canF = (isOffice && user.role!=="lo")||isMaster;
   const canL = true;
   const canS = isPastor||isLO||["secretary","ads","conf_secretary","chairman","accountant","master"].includes(user.role)||isMaster;
   const canAtt = isOffice||isMaster;
