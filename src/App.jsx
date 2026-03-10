@@ -511,42 +511,19 @@ const canActLeave = (user, leave, users=[]) => {
 };
 
 // ── Demo Data ──────────────────────────────────────────────────────────────────
-const USERS0 = [
-  { id:1,  name:"Bro. Emmanuel Yusuf",    email:"staff@ecwalafia.org",     password:"staff123",     role:"cashier",        category:"office", jobTitle:"Cashier",                dept:"finance",  approved:true,  gradeLevel:"C3",  gradePending:false, phone:"08012345678", dob:"1985-06-15", doj:"2022-01-15", docs:{}, customDocSections:[] },
-  { id:2,  name:"Pastor James Danladi",   email:"secretary@ecwalafia.org", password:"secretary123", role:"secretary",      category:"office", jobTitle:"Secretary",              dept:"admin",    approved:true,  gradeLevel:"J5",  gradePending:false, phone:"08023456789", dob:"1972-03-01", doj:"2018-03-01", docs:{}, customDocSections:[] },
-  { id:3,  name:"Mrs. Ruth Okonkwo",      email:"finance@ecwalafia.org",   password:"finance123",   role:"accountant",     category:"office", jobTitle:"Accountant",             dept:"finance",  approved:true,  gradeLevel:"H4",  gradePending:false, phone:"08034567890", dob:"1978-09-10", doj:"2019-06-10", docs:{}, customDocSections:[] },
-  { id:4,  name:"Mr. Philip Musa",        email:"auditor@ecwalafia.org",   password:"auditor123",   role:"auditor",        category:"office", jobTitle:"Auditor",                dept:"finance",  approved:true,  gradeLevel:"G2",  gradePending:false, phone:"08045678901", dob:"1980-04-20", doj:"2020-09-20", docs:{}, customDocSections:[] },
-  { id:5,  name:"Rev. Samuel Agbo",       email:"chairman@ecwalafia.org",  password:"chairman123",  role:"chairman",       category:"office", jobTitle:"Chairman",               dept:"admin",    approved:true,  gradeLevel:"O12", gradePending:false, phone:"08056789012", dob:"1965-01-01", doj:"2015-01-01", docs:{}, customDocSections:[] },
-  { id:6,  name:"Sis. Grace Adamu",       email:"conf@ecwalafia.org",      password:"conf123",      role:"conf_secretary", category:"office", jobTitle:"Confidential Secretary", dept:"admin",    approved:true,  gradeLevel:"E2",  gradePending:false, phone:"08067890123", dob:"1990-04-05", doj:"2021-04-05", docs:{}, customDocSections:[] },
-  { id:7,  name:"Rev. Daniel Maikudi",    email:"rev@ecwalafia.org",       password:"rev123",       role:"pastor",         category:"pastor", rank:"Reverend",                   lc_ph:"ECWA Bishara 1, Lafia", lcc:"Lafia", approved:true, phone:"08078901234", dob:"1975-05-12", doj:"2017-05-12", docs:{}, customDocSections:[], loAppointment:{ lcc_overseen:"Lafia", email:"LOLafiaLCC@ecwalafia.org", password:"lo2026", active:true } },
-  { id:9,  name:"Deacon Samuel Bako",     email:"ads@ecwalafia.org",       password:"ads123",       role:"ads",            category:"office", jobTitle:"ADS (Asst. DCC Secretary)", dept:"admin", approved:true, gradeLevel:"I3", gradePending:false, phone:"08090123456", dob:"1976-11-20", doj:"2019-01-10", docs:{}, customDocSections:[] },
-  { id:10, name:"Sis. Patience Danladi",  email:"personnel@ecwalafia.org", password:"personnel123", role:"personnel",      category:"office", jobTitle:"Personnel Officer",      dept:"admin",    approved:true,  gradeLevel:"F3",  gradePending:false, phone:"08001234567", dob:"1988-07-14", doj:"2020-03-01", docs:{}, customDocSections:[] },
-];
+const USERS0 = []; // demo data removed — all users load from Supabase
 
-const REQS0 = [
-  { id:"REQ-001", requester:"Bro. Emmanuel Yusuf", requesterEmail:"staff@ecwalafia.org", date:"2026-03-01", purpose:"Youth Outreach — transport, materials & catering", amount:185000, status:"pending_secretary", signatures:{}, comments:{} },
-  { id:"REQ-002", requester:"Bro. Emmanuel Yusuf", requesterEmail:"staff@ecwalafia.org", date:"2026-03-03", purpose:"Office supplies and printer cartridges", amount:42500, status:"pending_finance", signatures:{secretary:true}, comments:{secretary:"Reviewed. Request is in order."} },
-];
+const REQS0 = []; // demo data removed
 
-const LEAVES0 = [
-  { id:"LV-001", requester:"Rev. Daniel Maikudi", requesterEmail:"rev@ecwalafia.org", requester_role:"pastor", lcc:"Lafia", lc_ph:"ECWA Bishara 1, Lafia", rank:"Reverend", dept:null, type:"Annual Leave", startDate:"2026-03-15", endDate:"2026-03-22", days:7, reason:"Family visit and rest", status:"pending_dept", gradeLevel:"", allowance:null, approvals:[], date:"2026-03-05", refNo:"LV-2026-001" },
-];
+const LEAVES0 = []; // demo data removed
 
-const SUNDAY_REPORTS0 = [
-  { id:"SR-001", pastorId:7, pastorName:"Rev. Daniel Maikudi", lcc:"Lafia", lc_ph:"ECWA Bishara 1, Lafia", date:"2026-03-02", attendance:{men:45,women:62,children:38}, collections:{offering:25000,tithes:18000,thanksgiving:12000,freewill:5000}, optionalItems:[{id:"ems1",label:"EMS 1st Collection",amount:8000,excluded:true}], others:[], fullRemittance:false, totalGross:68000, remittanceBase:60000, remittanceDue:15000, submitted:true, appeal:null },
-];
+const SUNDAY_REPORTS0 = []; // demo data removed
 
 // Attendance records: {id, userId, userEmail, userName, dept, date, clockIn, clockOut, dailyReport, reportReadBy, adminClosed, adminNote}
-const ATTENDANCE0 = [
-  { id:"ATT-001", userId:1, userEmail:"staff@ecwalafia.org", userName:"Bro. Emmanuel Yusuf", dept:"finance", date:"2026-03-02", clockIn:"07:58", clockOut:"16:05", dailyReport:{achievements:"Processed payments for outreach programme, reconciled petty cash.", challenges:"Printer was down for 2 hours.", tomorrowPlan:"Submit monthly cash report."}, reportReadBy:[], adminClosed:false, adminNote:"" },
-  { id:"ATT-002", userId:1, userEmail:"staff@ecwalafia.org", userName:"Bro. Emmanuel Yusuf", dept:"finance", date:"2026-03-03", clockIn:"08:32", clockOut:"16:00", dailyReport:{achievements:"Filed receipts and updated ledger.", challenges:"None.", tomorrowPlan:"Prepare payroll summary."}, reportReadBy:[], adminClosed:false, adminNote:"" },
-];
+const ATTENDANCE0 = []; // demo data removed
 
 // Announcements: {id, title, body, audience, postedBy, postedByRole, date, readBy}
-const ANNOUNCEMENTS0 = [
-  { id:"ANN-001", title:"DCC General Meeting — March 2026", body:"All office staff, pastors and LOs are reminded of the DCC General Meeting scheduled for Saturday 28th March 2026 at 10:00am at the DCC Secretariat. Attendance is compulsory.", audience:"all", postedBy:"Pastor James Danladi", postedByRole:"Secretary", date:"2026-03-04", readBy:[] },
-  { id:"ANN-002", title:"Leave Application Reminder", body:"All staff intending to go on leave in Q2 2026 (April–June) should submit their leave applications not later than 31st March 2026. Late applications may not be processed in time.", audience:"office", postedBy:"Sis. Grace Adamu", postedByRole:"Admin & Personnel", date:"2026-03-05", readBy:[] },
-];
+const ANNOUNCEMENTS0 = []; // demo data removed
 
 // Password reset requests: {id, email, name, requestDate, status, newPassword, resolvedBy, resolvedDate}
 const PWD_REQS0 = [];
@@ -2152,7 +2129,7 @@ function StaffProf({ staff, user, users, canEdit, canEditDetails, lccs, onClose,
           )}
 
           {/* Appointment credentials — visible to the appointed pastor AND to master admin */}
-          {staff._apptTempPw && (staff.id===user.id || user.isMaster) &&(
+          {staff._apptTempPw && (staff.id===user.id || user.isMaster || user.role==="personnel") &&(
             <div style={{background:"linear-gradient(135deg,#fef9ee,#fdf3d0)",border:"2px solid #c9a84c",borderRadius:12,padding:"16px 18px",marginBottom:20}}>
               <div style={{fontSize:13,fontWeight:700,color:"#7d6008",marginBottom:4}}>👑 {user.isMaster && staff.id!==user.id ? staff.name+"'s" : "Your"} {staff._apptTempRole} Login Credentials</div>
               <div style={{fontSize:11,color:"#888",marginBottom:12}}>{user.isMaster && staff.id!==user.id ? "Share these credentials with the appointee. They use these to sign in as "+staff._apptTempRole+"." : "Use these to sign in as "+staff._apptTempRole+". Your pastor account remains active."}</div>
@@ -3605,6 +3582,7 @@ function MasterPanel({ user, users, setUsers, requests, setRequests, leaves, set
   const sections = [
     { id:"dashboard",    icon:"📊", label:"Overview"        },
     { id:"appointments", icon:"👑", label:"Appointments"    },
+    { id:"lo_appointments", icon:"🏘️", label:"LO Appointments" },
     { id:"impersonate",  icon:"🎭", label:"Act As Staff"    },
     { id:"records",      icon:"⚙️", label:"Edit Records"    },
     { id:"staff",        icon:"👥", label:"Staff Control"   },
@@ -3645,6 +3623,7 @@ function MasterPanel({ user, users, setUsers, requests, setRequests, leaves, set
           {section==="impersonate"&& <MasterImpersonate users={users} requests={requests} setRequests={setRequests} leaves={leaves} setLeaves={setLeaves} sundayReports={sundayReports} setSundayReports={setSundayReports} lccs={lccs} toast={toast} addLog={addLog}/>}
           {section==="records"    && <MasterRecords requests={requests} setRequests={setRequests} leaves={leaves} setLeaves={setLeaves} sundayReports={sundayReports} setSundayReports={setSundayReports} users={users} toast={toast} addLog={addLog}/>}
           {section==="appointments"&& <MasterAppointments users={users} setUsers={setUsers} toast={toast} addLog={addLog}/>}
+          {section==="lo_appointments"&& <LOAppointments users={users} setUsers={setUsers} lccs={lccs} toast={toast} addLog={addLog} user={user}/>}
           {section==="staff"      && <MasterStaff users={users} setUsers={setUsers} toast={toast} addLog={addLog}/>}
           {section==="roles"      && <MasterCustomRoles customRoles={customRoles} setCustomRoles={setCustomRoles} customDepts={customDepts} setCustomDepts={setCustomDepts} users={users} toast={toast} addLog={addLog}/>}
           {section==="lcc"        && <MasterLCC lccs={lccs} setLccs={setLccs} users={users} setUsers={setUsers} toast={toast} addLog={addLog}/>}
@@ -4152,6 +4131,188 @@ function MasterRecords({ requests, setRequests, leaves, setLeaves, sundayReports
   );
 }
 
+
+
+// ── LO Appointment Panel — used by Master and Personnel Officer ────────────────
+function LOAppointments({ users, setUsers, lccs, toast, addLog, user }) {
+  const [selLcc,   setSelLcc]   = useState(null);
+  const [filter,   setFilter]   = useState("");
+  const [confirm,  setConfirm]  = useState(null);
+  const [revoking, setRevoking] = useState(null);
+
+  const getLO = lcc => users.find(u =>
+    u.category==="pastor" && u.loAppointment?.active && u.loAppointment?.lcc_overseen===lcc
+  );
+  const eligible = lcc => users.filter(u =>
+    u.category==="pastor" && u.approved && u.lcc===lcc &&
+    !u.appointment?.active && !u.loAppointment?.active &&
+    (!filter || u.name?.toLowerCase().includes(filter.toLowerCase()))
+  );
+  const loEmail = lcc => "lo." + lcc.toLowerCase().replace(/\s+/g,".") + "@ecwalafia.org";
+
+  const appoint = async (lcc, pastor) => {
+    const chars = "ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
+    let tempPw = "LO@"; for(let i=0;i<6;i++) tempPw += chars[Math.floor(Math.random()*chars.length)];
+    const hashed = await hashPassword(tempPw);
+    const email  = loEmail(lcc);
+    const apptOn = today();
+    const loId   = "LO_" + lcc.replace(/\s+/g,"_");
+
+    const latestUsers = await new Promise(resolve => {
+      setUsers(prev => {
+        const withoutOld = prev.filter(u => !(u.role==="lo" && u._apptAccount && u.lcc_overseen===lcc));
+        const next = withoutOld.map(u => {
+          if(u.id===pastor.id) return {
+            ...u,
+            _apptTempPw: tempPw, _apptTempEmail: email,
+            _apptTempRole: "Local Overseer ("+lcc+" LCC)",
+            loAppointment: { active:true, lcc_overseen:lcc, email, appointedDate:apptOn, appointedBy:user.name }
+          };
+          return u;
+        }).concat([{
+          id: loId, name: pastor.name, email, password: hashed,
+          role: "lo", category: "office", _apptAccount: true,
+          approved: true, mustChangePassword: true,
+          lcc_overseen: lcc, lcc, signatureImage: null, photo: null,
+          appointedPastorId: pastor.id, appointedOn: apptOn, appointedBy: user.name,
+          docs: {}, customDocSections: []
+        }]);
+        resolve(next); return next;
+      });
+    });
+    try {
+      const payload = latestUsers.map(u => ({...u, photo:null, signatureImage:null}));
+      const { error } = await supabase.from("app_state")
+        .upsert({ key:"users", value:payload, updated_at:new Date().toISOString() }, { onConflict:"key" });
+      if(error) toast("⚠️ Appointed but DB save failed: "+error.message, "danger");
+      else toast("✅ "+pastor.name+" appointed as LO for "+lcc+" LCC.");
+    } catch(e) { toast("⚠️ Appointed locally but DB unreachable.","danger"); }
+    if(addLog) addLog("APPOINT_LO","Appointed "+pastor.name+" as LO — "+lcc+" LCC");
+    setConfirm(null); setSelLcc(null);
+  };
+
+  const revoke = async (lcc, pastor) => {
+    const latestUsers = await new Promise(resolve => {
+      setUsers(prev => {
+        const next = prev
+          .filter(u => !(u.role==="lo" && u._apptAccount && u.lcc_overseen===lcc))
+          .map(u => {
+            if(u.id===pastor.id) return {
+              ...u, _apptTempPw:null, _apptTempEmail:null, _apptTempRole:null,
+              loAppointment: null,
+              appointmentHistory:[...(u.appointmentHistory||[]),
+                { role:"lo", lcc, from:u.loAppointment?.appointedDate||"—", to:today() }]
+            };
+            return u;
+          });
+        resolve(next); return next;
+      });
+    });
+    try {
+      const payload = latestUsers.map(u => ({...u, photo:null, signatureImage:null}));
+      await supabase.from("app_state")
+        .upsert({ key:"users", value:payload, updated_at:new Date().toISOString() }, { onConflict:"key" });
+      toast("✅ LO revoked for "+lcc+" LCC.");
+    } catch(e) { toast("⚠️ Revoked locally but DB unreachable.","danger"); }
+    if(addLog) addLog("REVOKE_LO","Revoked LO for "+lcc+" LCC — "+pastor.name);
+    setRevoking(null);
+  };
+
+  return (
+    <div>
+      <div style={{fontFamily:"Georgia,serif",color:"#c9a84c",fontSize:20,marginBottom:6}}>🏘️ Local Overseer Appointments</div>
+      <div style={{fontSize:12,color:"rgba(255,255,255,0.4)",marginBottom:20}}>Appoint one pastor per LCC as Local Overseer. They keep their pastor account and get a separate LO login.</div>
+
+      {confirm&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",zIndex:4000,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+          <div style={{background:"#0b1f3a",border:"2px solid #c9a84c",borderRadius:16,padding:28,maxWidth:420,width:"100%"}}>
+            <div style={{fontSize:32,textAlign:"center",marginBottom:12}}>🏘️</div>
+            <h3 style={{fontFamily:"Georgia,serif",color:"#c9a84c",fontSize:18,textAlign:"center",marginBottom:16}}>Confirm LO Appointment</h3>
+            <div style={{background:"rgba(255,255,255,0.05)",borderRadius:10,padding:14,marginBottom:20,fontSize:13}}>
+              <div style={{color:"rgba(255,255,255,0.7)",marginBottom:6}}>👤 <span style={{color:"#fff",fontWeight:700}}>{confirm.pastor.name}</span></div>
+              <div style={{color:"rgba(255,255,255,0.7)",marginBottom:6}}>🏘️ LCC: <span style={{color:"#c9a84c",fontWeight:700}}>{confirm.lcc}</span></div>
+              <div style={{color:"rgba(255,255,255,0.7)",marginBottom:6}}>📧 Login: <span style={{color:"#fff",fontFamily:"monospace",fontSize:11}}>{loEmail(confirm.lcc)}</span></div>
+              <div style={{color:"rgba(255,255,255,0.4)",fontSize:11,marginTop:8}}>Temp password shown on their pastor profile after appointment.</div>
+            </div>
+            <div style={{display:"flex",gap:10}}>
+              <button onClick={()=>setConfirm(null)} style={{flex:1,background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.15)",color:"rgba(255,255,255,0.6)",borderRadius:10,padding:"10px",cursor:"pointer",fontSize:13}}>Cancel</button>
+              <button onClick={()=>appoint(confirm.lcc,confirm.pastor)} style={{flex:2,background:"#c9a84c",border:"none",color:"#0b1f3a",borderRadius:10,padding:"10px",cursor:"pointer",fontWeight:700,fontSize:14}}>✅ Confirm →</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {revoking&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",zIndex:4000,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+          <div style={{background:"#0b1f3a",border:"2px solid #e74c3c",borderRadius:16,padding:28,maxWidth:380,width:"100%"}}>
+            <h3 style={{fontFamily:"Georgia,serif",color:"#e74c3c",fontSize:18,textAlign:"center",marginBottom:16}}>Revoke LO Appointment?</h3>
+            <p style={{color:"rgba(255,255,255,0.6)",fontSize:13,textAlign:"center",marginBottom:20}}>
+              <strong style={{color:"#fff"}}>{revoking.pastor.name}</strong> will no longer be LO for <strong style={{color:"#c9a84c"}}>{revoking.lcc} LCC</strong>. Pastor account unaffected.
+            </p>
+            <div style={{display:"flex",gap:10}}>
+              <button onClick={()=>setRevoking(null)} style={{flex:1,background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.15)",color:"rgba(255,255,255,0.6)",borderRadius:10,padding:"10px",cursor:"pointer"}}>Cancel</button>
+              <button onClick={()=>revoke(revoking.lcc,revoking.pastor)} style={{flex:1,background:"#e74c3c",border:"none",color:"#fff",borderRadius:10,padding:"10px",cursor:"pointer",fontWeight:700}}>Revoke</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {!selLcc&&(
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",gap:12}}>
+          {lccs.map(lcc => {
+            const lo = getLO(lcc);
+            return (
+              <div key={lcc} style={{background:"rgba(255,255,255,0.04)",border:`1px solid ${lo?"rgba(201,168,76,0.4)":"rgba(255,255,255,0.08)"}`,borderRadius:12,padding:"14px 16px"}}>
+                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
+                  <span style={{fontSize:20}}>🏘️</span>
+                  <div>
+                    <div style={{color:"#fff",fontWeight:700,fontSize:13}}>{lcc} LCC</div>
+                    {lo ? <div style={{fontSize:11,color:"#c9a84c",marginTop:1}}>LO: {lo.name}</div>
+                        : <div style={{fontSize:11,color:"rgba(255,255,255,0.3)",marginTop:1}}>No LO appointed</div>}
+                  </div>
+                </div>
+                {lo
+                  ? <button onClick={()=>setRevoking({lcc,pastor:users.find(u=>u.id===lo.appointedPastorId)||lo})}
+                      style={{width:"100%",background:"rgba(231,76,60,0.15)",border:"1px solid rgba(231,76,60,0.4)",color:"#e74c3c",borderRadius:8,padding:"6px",cursor:"pointer",fontSize:12}}>
+                      🔄 Revoke & Reappoint
+                    </button>
+                  : <button onClick={()=>setSelLcc(lcc)}
+                      style={{width:"100%",background:"rgba(201,168,76,0.15)",border:"1px solid rgba(201,168,76,0.4)",color:"#c9a84c",borderRadius:8,padding:"6px",cursor:"pointer",fontSize:12}}>
+                      + Appoint LO
+                    </button>
+                }
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {selLcc&&(
+        <div>
+          <button onClick={()=>{setSelLcc(null);setFilter("");}} style={{background:"none",border:"none",color:"#c9a84c",cursor:"pointer",fontSize:13,marginBottom:16}}>← Back to LCCs</button>
+          <div style={{fontFamily:"Georgia,serif",color:"#fff",fontSize:16,marginBottom:4}}>Appoint LO for <span style={{color:"#c9a84c"}}>{selLcc} LCC</span></div>
+          <div style={{fontSize:12,color:"rgba(255,255,255,0.4)",marginBottom:14}}>Select an eligible pastor from {selLcc} LCC</div>
+          <input value={filter} onChange={e=>setFilter(e.target.value)} placeholder="Search pastor..." style={{background:"#1a1a2e",color:"#fff",border:"1px solid rgba(255,255,255,0.2)",borderRadius:8,padding:"8px 12px",width:"100%",boxSizing:"border-box",marginBottom:12,fontSize:13}}/>
+          {eligible(selLcc).length===0
+            ? <div style={{color:"rgba(255,255,255,0.3)",fontSize:13,padding:"20px",textAlign:"center"}}>No eligible pastors found in {selLcc} LCC</div>
+            : eligible(selLcc).map(p=>(
+              <div key={p.id} style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:10,padding:"12px 14px",marginBottom:8,display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                <div>
+                  <div style={{fontWeight:700,color:"#fff",fontSize:13}}>{p.name}</div>
+                  <div style={{fontSize:11,color:"rgba(255,255,255,0.4)",marginTop:2}}>{p.rank} · {p.lc_ph}</div>
+                </div>
+                <button onClick={()=>setConfirm({lcc:selLcc,pastor:p})}
+                  style={{background:"rgba(201,168,76,0.2)",border:"1px solid rgba(201,168,76,0.4)",color:"#c9a84c",borderRadius:8,padding:"6px 14px",cursor:"pointer",fontSize:12,fontWeight:700}}>
+                  Appoint →
+                </button>
+              </div>
+            ))
+          }
+        </div>
+      )}
+    </div>
+  );
+}
 
 // ── Master Appointments — Assign/Revert Chairman, VC, Secretary, ADS, LO ─────
 function MasterAppointments({ users, setUsers, toast, addLog }) {
@@ -5133,6 +5294,11 @@ function Dashboard({ user, users, setUsers, requests, setRequests, leaves, setLe
                   <PwdResetManager pwdReqs={pwdReqs} setPwdReqs={setPwdReqs} users={users} setUsers={setUsers} toast={toast}/>
                 </div>
               )}
+              {user.role==="personnel"&&(
+                <div style={{marginBottom:28}}>
+                  <LOAppointments users={users} setUsers={setUsers} lccs={lccs} toast={toast} addLog={()=>{}} user={user}/>
+                </div>
+              )}
               <PersonnelMod user={user} users={users} setUsers={setUsers} lccs={lccs} toast={toast}/>
             </div>
           )}
@@ -5308,26 +5474,23 @@ export default function App() {
   useEffect(() => {
     async function loadAll() {
       try {
-        const { data, error } = await supabase.from("app_state").select("*");
+        // Fire both queries in parallel — no waiting for one before the other
+        const [{ data, error }, { data: assets }] = await Promise.all([
+          supabase.from("app_state").select("*"),
+          supabase.from("user_assets").select("*")
+        ]);
         if (error) { console.error("Load error:", error); setLoading(false); return; }
         if (data && data.length > 0) {
           const map = Object.fromEntries(data.map(r => [r.key, r.value]));
           if (map.users) {
-            // Merge photos + signatures back from user_assets table
-            try {
-              const { data: assets } = await supabase.from("user_assets").select("*");
-              if (assets && assets.length > 0) {
-                const assetMap = Object.fromEntries(assets.map(a => [String(a.user_id), a]));
-                const merged = map.users.map(u => {
-                  const a = assetMap[String(u.id)];
-                  return a ? { ...u, photo: a.photo||null, signatureImage: a.signature||null } : u;
-                });
-                setUsers(merged);
-              } else {
-                setUsers(map.users);
-              }
-            } catch(e) {
-              console.error("Asset load error:", e);
+            if (assets && assets.length > 0) {
+              const assetMap = Object.fromEntries(assets.map(a => [String(a.user_id), a]));
+              const merged = map.users.map(u => {
+                const a = assetMap[String(u.id)];
+                return a ? { ...u, photo: a.photo||null, signatureImage: a.signature||null } : u;
+              });
+              setUsers(merged);
+            } else {
               setUsers(map.users);
             }
           }
