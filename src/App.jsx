@@ -613,6 +613,147 @@ function RetirementBadge({ dob, doj }) {
   return <span style={{background:"#eafbf0",color:"#27ae60",padding:"3px 10px",borderRadius:10,fontSize:11,fontWeight:700}}>✓ {ytr}yr to Retirement</span>;
 }
 
+// ── Image Compression Helper ──────────────────────────────────────────────────
+function compressImage(file, opts={}) {
+  return new Promise((resolve, reject) => {
+    const { maxW=400, maxH=400, quality=0.82 } = opts;
+    const reader = new FileReader();
+    reader.onload = ev => {
+      const img = new Image();
+      img.onload = () => {
+        let w = img.width, h = img.height;
+        const ratio = Math.min(maxW/w, maxH/h, 1);
+        w = Math.round(w*ratio); h = Math.round(h*ratio);
+        const canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = h;
+        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      };
+      img.onerror = reject;
+      img.src = ev.target.result;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+// ── Crop Modal (circular crop for profile photos) ─────────────────────────────
+function CropModal({ file, onSave, onClose }) {
+  const canvasRef = useRef(null);
+  const [img, setImg] = useState(null);
+  const [offset, setOffset] = useState({ x:0, y:0 });
+  const [scale, setScale] = useState(1);
+  const [dragging, setDragging] = useState(false);
+  const dragStart = useRef(null);
+  const SIZE = 280;
+
+  useEffect(() => {
+    const reader = new FileReader();
+    reader.onload = ev => {
+      const i = new Image();
+      i.onload = () => {
+        // Start scale so image fills the circle
+        const s = Math.max(SIZE/i.width, SIZE/i.height);
+        setScale(s);
+        setOffset({ x:(SIZE - i.width*s)/2, y:(SIZE - i.height*s)/2 });
+        setImg(i);
+      };
+      i.src = ev.target.result;
+    };
+    reader.readAsDataURL(file);
+  }, [file]);
+
+  useEffect(() => {
+    if(!img || !canvasRef.current) return;
+    const ctx = canvasRef.current.getContext('2d');
+    ctx.clearRect(0, 0, SIZE, SIZE);
+    // Clip to circle
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(SIZE/2, SIZE/2, SIZE/2, 0, Math.PI*2);
+    ctx.clip();
+    ctx.drawImage(img, offset.x, offset.y, img.width*scale, img.height*scale);
+    ctx.restore();
+    // Dim overlay outside circle
+    ctx.save();
+    ctx.fillStyle = 'rgba(0,0,0,0.45)';
+    ctx.beginPath();
+    ctx.rect(0,0,SIZE,SIZE);
+    ctx.arc(SIZE/2, SIZE/2, SIZE/2, 0, Math.PI*2, true);
+    ctx.fill();
+    ctx.restore();
+    // Circle border
+    ctx.beginPath();
+    ctx.arc(SIZE/2, SIZE/2, SIZE/2-1, 0, Math.PI*2);
+    ctx.strokeStyle = '#c9a84c';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  }, [img, offset, scale]);
+
+  const clamp = (x, y, s) => {
+    const iw = img.width*s, ih = img.height*s;
+    return {
+      x: Math.min(0, Math.max(SIZE-iw, x)),
+      y: Math.min(0, Math.max(SIZE-ih, y))
+    };
+  };
+
+  const onMouseDown = e => { setDragging(true); dragStart.current = { mx: e.clientX, my: e.clientY, ox: offset.x, oy: offset.y }; };
+  const onMouseMove = e => {
+    if(!dragging || !dragStart.current) return;
+    const dx = e.clientX - dragStart.current.mx;
+    const dy = e.clientY - dragStart.current.my;
+    setOffset(clamp(dragStart.current.ox+dx, dragStart.current.oy+dy, scale));
+  };
+  const onMouseUp = () => setDragging(false);
+  const onTouchStart = e => { const t=e.touches[0]; setDragging(true); dragStart.current={mx:t.clientX,my:t.clientY,ox:offset.x,oy:offset.y}; };
+  const onTouchMove = e => { if(!dragging||!dragStart.current)return; const t=e.touches[0]; const dx=t.clientX-dragStart.current.mx; const dy=t.clientY-dragStart.current.my; setOffset(clamp(dragStart.current.ox+dx,dragStart.current.oy+dy,scale)); e.preventDefault(); };
+
+  const onWheel = e => {
+    e.preventDefault();
+    if(!img) return;
+    const minS = Math.max(SIZE/img.width, SIZE/img.height);
+    const newS = Math.min(3, Math.max(minS, scale - e.deltaY*0.001));
+    setScale(newS);
+    setOffset(o => clamp(o.x, o.y, newS));
+  };
+
+  const confirm = () => {
+    const out = document.createElement('canvas');
+    out.width = 400; out.height = 400;
+    const ctx = out.getContext('2d');
+    ctx.beginPath();
+    ctx.arc(200, 200, 200, 0, Math.PI*2);
+    ctx.clip();
+    const ratio = 400/SIZE;
+    ctx.drawImage(img, offset.x*ratio, offset.y*ratio, img.width*scale*ratio, img.height*scale*ratio);
+    onSave(out.toDataURL('image/jpeg', 0.85));
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" style={{maxWidth:360,padding:24}} onClick={e=>e.stopPropagation()}>
+        <div style={{fontFamily:"Georgia,serif",fontSize:16,fontWeight:700,color:"#0b1f3a",marginBottom:6}}>📷 Crop Profile Photo</div>
+        <div style={{fontSize:12,color:"#888",marginBottom:16}}>Drag to reposition · Scroll to zoom · Face should fill the circle</div>
+        {img ? (
+          <canvas ref={canvasRef} width={SIZE} height={SIZE}
+            style={{borderRadius:"50%",display:"block",margin:"0 auto 16px",cursor:dragging?"grabbing":"grab",touchAction:"none"}}
+            onMouseDown={onMouseDown} onMouseMove={onMouseMove} onMouseUp={onMouseUp} onMouseLeave={onMouseUp}
+            onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onMouseUp}
+            onWheel={onWheel}
+          />
+        ) : (
+          <div style={{width:SIZE,height:SIZE,borderRadius:"50%",background:"#f0ede8",margin:"0 auto 16px",display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,color:"#aaa"}}>Loading...</div>
+        )}
+        <div style={{display:"flex",gap:10}}>
+          <button className="btn btn-outline" style={{flex:1}} onClick={onClose}>Cancel</button>
+          <button className="btn btn-gold" style={{flex:1}} onClick={confirm} disabled={!img}>✅ Use This Photo</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Signature Pad ──────────────────────────────────────────────────────────────
 function SigPad({ onSave, onClose }) {
   const ref=useRef(null); const dr=useRef(false); const [has,setHas]=useState(false);
@@ -649,7 +790,7 @@ function SigUpdater({ staffId, onUpdate }) {
         <button className="btn btn-outline btn-sm" onClick={()=>setShow(true)}>✏️ Draw</button>
         <button className="btn btn-outline btn-sm" onClick={()=>uploadRef.current.click()}>📷 Upload</button>
       </div>
-      <input ref={uploadRef} type="file" style={{display:"none"}} accept="image/*" onChange={e=>{const f=e.target.files[0];if(!f)return;const rd=new FileReader();rd.onload=ev=>onUpdate(staffId,{signatureImage:ev.target.result});rd.readAsDataURL(f);e.target.value="";}}/>
+      <input ref={uploadRef} type="file" style={{display:"none"}} accept="image/*" onChange={async e=>{const f=e.target.files[0];if(!f)return;const data=await compressImage(f,{maxW:600,maxH:200,quality:0.85});onUpdate(staffId,{signatureImage:data});e.target.value="";}}/>
       {show&&<SigPad onSave={d=>{onUpdate(staffId,{signatureImage:d});setShow(false);}} onClose={()=>setShow(false)}/>}
     </>
   );
@@ -2019,7 +2160,7 @@ function StaffProf({ staff, user, users, canEdit, canEditDetails, lccs, onClose,
   onUpdateUser= onUpdateUser|| (()=>{});
   onGetUsers  = onGetUsers  || (()=>[]);
   const isSelfEdit = staff.id===user.id && !canEditDetails;
-  const fref=useRef(null); const photoRef=useRef(null); const [upl,setUpl]=useState(null);
+  const fref=useRef(null); const photoRef=useRef(null); const [upl,setUpl]=useState(null); const [cropFile,setCropFile]=useState(null);
   const [editing,setEditing]=useState(false); const [transferMode,setTransferMode]=useState(false);
   const [newLcc,setNewLcc]=useState(""); const [newChurch,setNewChurch]=useState(""); const [transferNote,setTransferNote]=useState("");
   const [addSection,setAddSection]=useState(false); const [newSecLabel,setNewSecLabel]=useState("");
@@ -2044,8 +2185,8 @@ function StaffProf({ staff, user, users, canEdit, canEditDetails, lccs, onClose,
   const initials=(form.name||staff.name).split(" ").map(n=>n[0]).join("").slice(0,2).toUpperCase();
   const pick=dt=>{setUpl(dt);fref.current.click();};
   const pickPhoto=()=>{if(!canEdit)return;photoRef.current.click();};
-  const onPhotoChange=e=>{const f=e.target.files[0];if(!f)return;const rd=new FileReader();rd.onload=ev=>onUpdate(staff.id,{photo:ev.target.result});rd.readAsDataURL(f);e.target.value="";};
-  const onChange=e=>{const f=e.target.files[0];if(!f||!upl)return;const rd=new FileReader();rd.onload=ev=>{const doc={name:f.name,type:f.type,size:(f.size/1024).toFixed(1)+" KB",data:ev.target.result,uploadedAt:new Date().toLocaleDateString("en-GB")};onUpdate(staff.id,{docs:{...staff.docs,[upl]:[...(staff.docs[upl]||[]),doc]}});setUpl(null);};rd.readAsDataURL(f);e.target.value="";};
+  const onPhotoChange=e=>{const f=e.target.files[0];if(!f)return;setCropFile(f);e.target.value="";};
+  const onChange=e=>{const f=e.target.files[0];if(!f||!upl)return;if(f.size>2*1024*1024){alert(`"${f.name}" is ${(f.size/1024/1024).toFixed(1)}MB — maximum is 2MB.\n\nPlease compress it first:\n• Scanned docs: use CamScanner on medium quality\n• Images: resize before uploading`);e.target.value="";return;}const rd=new FileReader();rd.onload=ev=>{const doc={name:f.name,type:f.type,size:(f.size/1024).toFixed(1)+" KB",data:ev.target.result,uploadedAt:new Date().toLocaleDateString("en-GB")};onUpdate(staff.id,{docs:{...staff.docs,[upl]:[...(staff.docs[upl]||[]),doc]}});setUpl(null);};rd.readAsDataURL(f);e.target.value=""};
   const dl=doc=>{const a=document.createElement("a");a.href=doc.data;a.download=doc.name;a.click();};
   const delDoc=(tid,idx)=>{const arr=[...(staff.docs[tid]||[])];arr.splice(idx,1);onUpdate(staff.id,{docs:{...staff.docs,[tid]:arr}});};
   const saveEdit=()=>{onUpdate(staff.id,form);setEditing(false);};
@@ -2066,6 +2207,7 @@ function StaffProf({ staff, user, users, canEdit, canEditDetails, lccs, onClose,
         <MH title={editing?"Editing: "+staff.name:staff.name} sub="Staff Profile" onClose={onClose}/>
         <input ref={fref} type="file" style={{display:"none"}} onChange={onChange} accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"/>
         <input ref={photoRef} type="file" style={{display:"none"}} onChange={onPhotoChange} accept="image/*"/>
+        {cropFile&&<CropModal file={cropFile} onSave={data=>{onUpdate(staff.id,{photo:data});setCropFile(null);}} onClose={()=>setCropFile(null)}/>}
         <div style={{padding:24}}>
 
           {/* Retirement Alert */}
@@ -2388,7 +2530,7 @@ function DocFileList({ files, canEdit, onDl, onDel, onPick, label }) {
   const [lightbox,setLightbox]=useState(null);
   const isViewable = doc => doc.type?.includes("image")||doc.type?.includes("pdf")||doc.data?.startsWith("data:image")||doc.data?.startsWith("data:application/pdf");
   if(files.length===0) return canEdit?(
-    <div className="upload-box" onClick={onPick}><div style={{fontSize:28,marginBottom:6}}>📤</div><div style={{fontSize:12,color:"#aaa"}}>Click to upload {label.toLowerCase()}</div></div>
+    <div className="upload-box" onClick={onPick}><div style={{fontSize:28,marginBottom:6}}>📤</div><div style={{fontSize:12,color:"#aaa"}}>Click to upload {label.toLowerCase()}</div><div style={{fontSize:10,color:"#ccc",marginTop:4}}>Max 2MB · Compress large scans with CamScanner</div></div>
   ):(
     <div style={{padding:"12px 16px",background:"#f8f6f0",borderRadius:8,fontSize:12,color:"#bbb",textAlign:"center"}}>No files uploaded yet</div>
   );
@@ -2465,7 +2607,7 @@ function PersonnelMod({ user, users, setUsers, lccs, toast }) {
 
   const retiringSoon=users.filter(u=>{const y=yearsToRetire(u.dob,u.doj);return y!==null&&y<=5;});
 
-  const pendingAccounts = users.filter(u=>!u.approved);
+  const pendingAccounts = users.filter(u=>!u.approved && !u._apptAccount);
 
   return(
     <div>
@@ -2545,6 +2687,7 @@ function PersonnelMod({ user, users, setUsers, lccs, toast }) {
 }
 
 function matchFilter(u,q,rf) {
+  if(u._apptAccount) return false;
   const qq=q.toLowerCase();
   const matchQ=!q||(u.name.toLowerCase().includes(qq)||u.email.toLowerCase().includes(qq)||(u.dept||"").toLowerCase().includes(qq)||(u.lcc||"").toLowerCase().includes(qq)||(u.jobTitle||"").toLowerCase().includes(qq));
   const matchRf=rf==="all"||u.category===rf;
@@ -3404,7 +3547,7 @@ function SignUp({ users, lccs, setLccs, onSignUp, onGo }) {
                 <button type="button" className="btn btn-outline" style={{flex:1,color:"#c9a84c",borderColor:"rgba(201,168,76,0.4)"}} onClick={()=>sigUploadRef.current.click()}>📷 Upload Photo</button>
               </div>
             )}
-            <input ref={sigUploadRef} type="file" style={{display:"none"}} accept="image/*" onChange={e=>{const f=e.target.files[0];if(!f)return;const rd=new FileReader();rd.onload=ev=>setSignatureImage(ev.target.result);rd.readAsDataURL(f);e.target.value="";}}/>
+            <input ref={sigUploadRef} type="file" style={{display:"none"}} accept="image/*" onChange={async e=>{const f=e.target.files[0];if(!f)return;const data=await compressImage(f,{maxW:600,maxH:200,quality:0.85});setSignatureImage(data);e.target.value="";}}/>
           </div>
           <div className="info-box">ℹ️ All accounts are subject to approval by Admin & Personnel before you can sign in.</div>
           <button className="btn btn-gold" style={{width:"100%",marginTop:4,opacity:submitting?0.7:1}} disabled={submitting} onClick={go}>{submitting?"⏳ Creating Account...":"Create Account →"}</button>
@@ -3595,7 +3738,7 @@ function MasterDashboard({ users, requests, leaves, sundayReports, announcements
   const pendingFinance   = requests.filter(r=>r.status.startsWith("pending")).length;
   const pendingLeave     = leaves.filter(l=>l.status.startsWith("pending")).length;
   const pendingAppeals   = sundayReports.filter(r=>r.appeal&&r.appeal.status==="pending").length;
-  const pendingAccounts  = users.filter(u=>!u.approved).length;
+  const pendingAccounts  = users.filter(u=>!u.approved && !u._apptAccount).length;
   const totalStaff       = users.filter(u=>u.category==="office").length;
   const totalPastors     = users.filter(u=>u.category==="pastor").length;
   const todayStr         = new Date().toISOString().split("T")[0];
@@ -4724,7 +4867,7 @@ function MasterStaff({ users, setUsers, toast, addLog }) {
   const [showReset, setShowReset] = useState(false);
   const sf = k => e => setForm(p=>({...p,[k]:e.target.value}));
 
-  const filtered = users.filter(u=>u.name?.toLowerCase().includes(q.toLowerCase())||u.email?.toLowerCase().includes(q.toLowerCase()));
+  const filtered = users.filter(u=>!u._apptAccount && (u.name?.toLowerCase().includes(q.toLowerCase())||u.email?.toLowerCase().includes(q.toLowerCase())));
 
   const openStaff = (u) => { setSel(u); setForm({...u}); setShowReset(false); setResetPw(""); };
 
@@ -4741,12 +4884,19 @@ function MasterStaff({ users, setUsers, toast, addLog }) {
     toast(`Account ${newStatus==="active"?"reactivated":"suspended"}.`);
   };
 
-  const deleteStaff = (u) => {
+  const deleteStaff = async (u) => {
     if(!window.confirm(`Delete ${u.name} permanently? This cannot be undone.`)) return;
-    setUsers(us=>us.filter(x=>x.id!==u.id));
-    addLog("DELETE_STAFF",`Deleted account of ${u.name}`);
-    toast("🗑️ Account deleted.");
+    const updated = users.filter(x=>x.id!==u.id);
+    setUsers(updated);
     if(sel?.id===u.id) setSel(null);
+    addLog("DELETE_STAFF",`Deleted account of ${u.name}`);
+    try {
+      const payload = updated.map(x=>({...x, photo:null, signatureImage:null}));
+      const { error } = await supabase.from("app_state")
+        .upsert({ key:"users", value:payload, updated_at:new Date().toISOString() }, { onConflict:"key" });
+      if(error) toast("⚠️ Deleted locally but DB save failed: "+error.message, "danger");
+      else toast("🗑️ Account deleted.");
+    } catch(e) { toast("⚠️ Deleted locally but DB unreachable.", "danger"); }
   };
 
   const doReset = async () => {
