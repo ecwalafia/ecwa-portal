@@ -5527,24 +5527,24 @@ Click OK to download an Excel archive first, or Cancel to trim without saving.`)
 function printElement(elementId) {
   const el = document.getElementById(elementId);
   if(!el) { window.print(); return; }
-  const html = el.innerHTML;
-  const logoSrc = document.querySelector('img[alt="ECWA"]')?.src || "";
-  const win = window.open("","_blank","width=800,height=900");
-  win.document.write(`<!DOCTYPE html><html><head><title>ECWA Lafia DCC</title>
-  <style>
-    *{box-sizing:border-box;margin:0;padding:0;}
-    body{font-family:'Segoe UI',sans-serif;font-size:13px;color:#222;padding:20px;}
-    table{width:100%;border-collapse:collapse;}
-    td{padding:7px 12px;border-bottom:1px solid #e8e4dc;}
-    img{max-width:100%;height:auto;}
-    .no-print{display:none!important;}
-    @media print{
-      body{padding:0;}
-      @page{margin:12mm;}
-    }
-  </style></head><body>${html}</body></html>`);
-  win.document.close();
-  setTimeout(()=>{win.focus();win.print();},400);
+  const styleId = "__print_style__";
+  let style = document.getElementById(styleId);
+  if(!style) { style = document.createElement("style"); style.id = styleId; document.head.appendChild(style); }
+  style.innerHTML = `@media print {
+    body > * { display: none !important; }
+    #${elementId} { display: block !important; position: static !important; visibility: visible !important; }
+    #${elementId} * { visibility: visible !important; }
+    .no-print { display: none !important; }
+    @page { margin: 12mm; }
+  }`;
+  const originalParent = el.parentNode;
+  const placeholder = document.createElement("span");
+  originalParent.insertBefore(placeholder, el);
+  document.body.appendChild(el);
+  window.print();
+  originalParent.insertBefore(el, placeholder);
+  placeholder.remove();
+  style.innerHTML = "";
 }
 
 // ── Password hashing (SHA-256 via Web Crypto API — no library needed) ─────────
