@@ -4890,7 +4890,10 @@ function MasterStaff({ users, setUsers, toast, addLog }) {
   // Appointment roles (chairman, vice_chairman, secretary, ads, lo) managed via Appointments tab
   const ROLES = ["cashier","accountant","auditor","conf_secretary","personnel","pastor","ems_coordinator","lecturer","support"];
 
-  const pendingAccounts = users.filter(u=>!u.approved && !u._apptAccount && !u._suspendedForAppt);
+  const pendingAccounts = Object.values(
+    users.filter(u=>!u.approved && !u._apptAccount && !u._suspendedForAppt)
+    .reduce((acc,u)=>{ if(!acc[u.email.toLowerCase()]) acc[u.email.toLowerCase()]=u; return acc; },{})
+  );
 
   return (
     <div>
@@ -4909,11 +4912,20 @@ function MasterStaff({ users, setUsers, toast, addLog }) {
                 </div>
                 <div style={{display:"flex",gap:8}}>
                   <button onClick={()=>{
-                    setUsers(us=>us.map(x=>x.id===u.id?{...x,approved:true}:x));
+                    const email = u.email.toLowerCase();
+                    setUsers(us=>{
+                      const dupeIds = us.filter(x=>x.email.toLowerCase()===email && x.id!==u.id && !x.approved).map(x=>x.id);
+                      return us.filter(x=>!dupeIds.includes(x.id)).map(x=>x.id===u.id?{...x,approved:true}:x);
+                    });
                     addLog("APPROVE_ACCOUNT","Approved account of "+u.name);
                     toast("✅ "+u.name+" approved. They can now sign in.");
                   }} style={{background:"rgba(39,174,96,0.2)",border:"1px solid rgba(39,174,96,0.5)",color:"#27ae60",borderRadius:6,padding:"5px 14px",cursor:"pointer",fontSize:12,fontWeight:700}}>✅ Approve</button>
-                  <button onClick={()=>deleteStaff(u)} style={{background:"rgba(192,57,43,0.15)",border:"1px solid rgba(192,57,43,0.3)",color:"#e74c3c",borderRadius:6,padding:"5px 10px",cursor:"pointer",fontSize:12}}>🗑️ Reject</button>
+                  <button onClick={()=>{
+                    const email = u.email.toLowerCase();
+                    setUsers(us=>us.filter(x=>x.email.toLowerCase()!==email));
+                    addLog("REJECT_ACCOUNT","Rejected account of "+u.name);
+                    toast("🗑️ "+u.name+" rejected and removed.");
+                  }} style={{background:"rgba(192,57,43,0.15)",border:"1px solid rgba(192,57,43,0.3)",color:"#e74c3c",borderRadius:6,padding:"5px 10px",cursor:"pointer",fontSize:12}}>🗑️ Reject</button>
                 </div>
               </div>
             ))}
