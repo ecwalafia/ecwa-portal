@@ -754,52 +754,10 @@ function CropModal({ file, onSave, onClose }) {
   );
 }
 
-// ── Signature Pad ──────────────────────────────────────────────────────────────
-function SigPad({ onSave, onClose }) {
-  const ref=useRef(null); const dr=useRef(false); const [has,setHas]=useState(false);
-  const gp=(e,c)=>{const r=c.getBoundingClientRect(),s=e.touches?e.touches[0]:e;return[s.clientX-r.left,s.clientY-r.top];};
-  const md=e=>{dr.current=true;const ctx=ref.current.getContext("2d"),[x,y]=gp(e,ref.current);ctx.beginPath();ctx.moveTo(x,y);};
-  const mm=e=>{if(!dr.current)return;e.preventDefault();const ctx=ref.current.getContext("2d"),[x,y]=gp(e,ref.current);ctx.strokeStyle="#0b1f3a";ctx.lineWidth=2.5;ctx.lineCap="round";ctx.lineTo(x,y);ctx.stroke();setHas(true);};
-  const mu=()=>{dr.current=false;};
-  const cl=()=>{ref.current.getContext("2d").clearRect(0,0,500,160);setHas(false);};
-  return(
-    <div className="overlay" style={{zIndex:1100}}>
-      <div className="modal" style={{maxWidth:480}}>
-        <div style={{padding:"24px 24px 0"}}>
-          <h3 style={{fontFamily:"Georgia,serif",fontSize:20,marginBottom:6}}>Draw Your Signature</h3>
-          <p style={{fontSize:12,color:"#888",marginBottom:14}}>Use your mouse or finger to sign below.</p>
-          <canvas ref={ref} width={432} height={160} style={{border:"2px dashed #c9a84c",borderRadius:10,width:"100%",height:160,cursor:"crosshair",background:"#fafaf8",display:"block"}} onMouseDown={md} onMouseMove={mm} onMouseUp={mu} onMouseLeave={mu} onTouchStart={md} onTouchMove={mm} onTouchEnd={mu}/>
-        </div>
-        <div style={{padding:"16px 24px 24px",display:"flex",gap:10,justifyContent:"flex-end"}}>
-          <button className="btn btn-outline" onClick={cl}>Clear</button>
-          <button className="btn btn-outline" onClick={onClose}>Cancel</button>
-          <button className="btn btn-gold" disabled={!has} onClick={()=>onSave(ref.current.toDataURL())}>Apply Signature</button>
-        </div>
-      </div>
-    </div>
-  );
-}
 
-// ── Signature Updater (inline button for staff profile) ───────────────────────
-function SigUpdater({ staffId, onUpdate }) {
-  const [show,setShow]=useState(false);
-  const uploadRef=useRef(null);
-  return(
-    <>
-      <div style={{display:"flex",gap:8,marginTop:4}}>
-        <button className="btn btn-outline btn-sm" onClick={()=>setShow(true)}>✏️ Draw</button>
-        <button className="btn btn-outline btn-sm" onClick={()=>uploadRef.current.click()}>📷 Upload</button>
-      </div>
-      <input ref={uploadRef} type="file" style={{display:"none"}} accept="image/*" onChange={async e=>{const f=e.target.files[0];if(!f)return;const data=await compressImage(f,{maxW:600,maxH:200,quality:0.85});onUpdate(staffId,{signatureImage:data});e.target.value="";}}/>
-      {show&&<SigPad onSave={d=>{onUpdate(staffId,{signatureImage:d});setShow(false);}} onClose={()=>setShow(false)}/>}
-    </>
-  );
-}
-
-// ── Finance: Request Detail ───────────────────────────────────────────────────
 function ReqDetail({ req, user, users, onClose, onAction }) {
-  const savedSig = users?.find(u=>u.id===user.id)?.signatureImage||null;
-  const [showSig,setShowSig]=useState(false); const [sig,setSig]=useState(savedSig); const [note,setNote]=useState("");
+
+  const [note,setNote]=useState("");
   const [showPrint,setShowPrint]=useState(false);
   const isApprover = user.isMaster ? req.status!=="approved"&&req.status!=="rejected"
     : ["secretary","ads","conf_secretary"].includes(user.role) ? req.status==="pending_secretary"
@@ -893,21 +851,9 @@ function ReqDetail({ req, user, users, onClose, onAction }) {
               <div style={{borderTop:"1.5px solid #f0ede8",paddingTop:18}}>
                 <div style={{fontSize:11,fontWeight:700,color:"#5a5a7a",textTransform:"uppercase",letterSpacing:0.5,marginBottom:12}}>Your Action</div>
                 <div style={{marginBottom:12}}><label>Comment (optional)</label><textarea rows={2} value={note} onChange={e=>setNote(e.target.value)} style={{resize:"vertical"}} placeholder="Add your remarks..."/></div>
-                <div style={{marginBottom:16}}>
-                  <label>E-Signature *</label>
-                  {sig
-                    ?<div style={{display:"flex",alignItems:"center",gap:10,background:"#f8f6f0",borderRadius:8,padding:"8px 12px"}}>
-                      <img src={sig} alt="sig" style={{height:48,border:"1px solid #e2ddd6",borderRadius:8,background:"#fff"}}/>
-                      <div>
-                        <div style={{fontSize:11,color:"#27ae60",fontWeight:600}}>{savedSig===sig?"✅ Your saved signature":"✅ Signature ready"}</div>
-                        <button className="btn btn-outline" style={{padding:"3px 10px",fontSize:11,marginTop:4}} onClick={()=>setShowSig(true)}>Re-sign</button>
-                      </div>
-                    </div>
-                    :<button className="btn btn-outline" style={{width:"100%"}} onClick={()=>setShowSig(true)}>✏️ Draw Your Signature</button>}
-                </div>
                 <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
-                  <button className="btn btn-red" disabled={!sig} onClick={()=>{onAction(req.id,"reject",sig,note);onClose();}}>Reject</button>
-                  <button className="btn btn-gold" disabled={!sig} onClick={()=>{onAction(req.id,"approve",sig,note);onClose();}}>
+                  <button className="btn btn-red" onClick={()=>{onAction(req.id,"reject",user.name,note);onClose();}}>Reject</button>
+                  <button className="btn btn-gold" onClick={()=>{onAction(req.id,"approve",user.name,note);onClose();}}>
                     {["chairman","vice_chairman"].includes(user.role)?"✓ Grant Final Approval":"Forward to Next →"}
                   </button>
                 </div>
@@ -920,9 +866,98 @@ function ReqDetail({ req, user, users, onClose, onAction }) {
           </div>
         </div>
       </div>
-      {showSig&&<SigPad onSave={d=>{setSig(d);setShowSig(false);}} onClose={()=>setShowSig(false)}/>}
     </>
   );
+}
+
+// ── QR Code Helper ─────────────────────────────────────────────────────────────
+// Load QRCode.js library once at module level
+(function loadQRLib(){
+  if(window.QRCode || document.getElementById("qrcode-lib")) return;
+  const s = document.createElement("script");
+  s.id = "qrcode-lib";
+  s.src = "https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js";
+  document.head.appendChild(s);
+})();
+
+function QRCodeImg({ text, size=80 }) {
+  const ref = useRef(null);
+  useEffect(()=>{
+    if(!ref.current) return;
+    const render = () => {
+      if(!window.QRCode) { setTimeout(render, 100); return; }
+      ref.current.innerHTML = "";
+      new window.QRCode(ref.current, {
+        text: text || "ECWA Lafia DCC",
+        width: size, height: size,
+        colorDark: "#0b1f3a", colorLight: "#ffffff",
+        correctLevel: window.QRCode.CorrectLevel.M,
+      });
+    };
+    render();
+  }, [text, size]);
+  return <div ref={ref} style={{width:size,height:size,flexShrink:0}}/>;
+}
+
+function StaffQR({ staff }) {
+  const text = [
+    "ECWA LAFIA DCC - STAFF VERIFICATION",
+    "Name: " + staff.name,
+    "Staff ID: ECWA-" + String(staff.id).padStart(4,"0"),
+    "Role: " + (staff.category==="pastor" ? staff.rank : staff.jobTitle||roleDisplay(staff.role)),
+    staff.category==="pastor" ? "LCC: " + (staff.lcc||"—") : "Dept: " + (DEPARTMENTS.find(d=>d.id===staff.dept)?.label||"—"),
+    "Date Joined: " + (staff.doj ? fdate(staff.doj) : "—"),
+    staff.gradeLevel ? "Grade Level: " + staff.gradeLevel : "",
+    "Verified by: ECWA Lafia DCC Portal",
+    "Powered by Kriz-Technologies",
+  ].filter(Boolean).join("\n");
+  return <QRCodeImg text={text} size={80}/>;
+}
+
+function DocQR({ doc, type }) {
+  // type: "leave" | "fund"
+  let lines = [];
+  if(type==="leave"){
+    const appr = (doc.approvals||[]);
+    lines = [
+      "ECWA LAFIA DCC - DOCUMENT VERIFICATION",
+      "Document: Leave Approval Letter",
+      "Ref: " + (doc.refNo||doc.id),
+      "Staff: " + doc.requester,
+      "Leave Type: " + doc.type + " - " + doc.days + " Day(s)",
+      "Dates: " + fdate(doc.startDate) + " to " + fdate(doc.endDate),
+      "",
+      "APPROVAL CHAIN:",
+      ...appr.map((a,i)=>`${i+1}. ${a.position} - ${a.name}\n   Approved: ${fdate(a.date)}${a.note ? "\n   Comment: "+a.note : ""}`),
+      "",
+      "Final Status: APPROVED",
+      "Generated: " + fdate(today()),
+      "Powered by Kriz-Technologies",
+    ];
+  } else {
+    const steps = ["secretary","accountant","auditor","chairman","vice_chairman"];
+    const chain = steps.filter(k=>doc.signatures?.[k]).map((k,i)=>{
+      const label = {secretary:"Secretary",accountant:"Finance",auditor:"Auditor",chairman:"Chairman",vice_chairman:"Vice Chairman"}[k]||k;
+      return `${i+1}. ${label} - ${doc.signatures[k]}${doc.comments?.[k] ? "\n   Comment: "+doc.comments[k] : ""}`;
+    });
+    lines = [
+      "ECWA LAFIA DCC - DOCUMENT VERIFICATION",
+      "Document: Fund Request Approval",
+      "Ref: " + doc.id,
+      "Requested by: " + doc.requester,
+      "Department: " + (doc.requesterRole||"—"),
+      "Amount: " + money(doc.amount),
+      "Purpose: " + (doc.purpose||"—"),
+      "",
+      "APPROVAL CHAIN:",
+      ...chain,
+      "",
+      "Final Status: APPROVED",
+      "Generated: " + fdate(today()),
+      "Powered by Kriz-Technologies",
+    ];
+  }
+  return <QRCodeImg text={lines.filter(Boolean).join("\n")} size={80}/>;
 }
 
 // ── Finance Print Form ────────────────────────────────────────────────────────
@@ -1005,26 +1040,35 @@ function FinancePrintForm({ req, onClose }) {
               </table>
             </div>
           )}
-          {/* Approval signatures */}
+          {/* Approval Chain */}
           {Object.keys(req.signatures).length>0&&(
-            <div style={{marginBottom:24}}>
-              <div style={{fontSize:12,fontWeight:700,color:"#5a5a7a",textTransform:"uppercase",letterSpacing:0.5,marginBottom:12,borderTop:"1px solid #e8e4dc",paddingTop:12}}>Approval Signatures</div>
-              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:16}}>
+            <div style={{marginBottom:14}}>
+              <div style={{fontSize:11,fontWeight:700,color:"#5a5a7a",textTransform:"uppercase",letterSpacing:0.5,marginBottom:8,borderTop:"1px solid #e8e4dc",paddingTop:10}}>Approval Chain</div>
+              <div style={{display:"grid",gridTemplateColumns:`repeat(${Math.min(F_STEPS.filter(s=>req.signatures[s.role]).length,4)},1fr)`,gap:8}}>
                 {F_STEPS.filter(s=>req.signatures[s.role]).map(s=>(
-                  <div key={s.role} style={{textAlign:"center",border:"1px solid #e8e4dc",borderRadius:8,padding:"12px 10px"}}>
-                    {typeof req.signatures[s.role]==="string"&&req.signatures[s.role].length>20?
-                      <img src={req.signatures[s.role]} alt="" style={{height:46,marginBottom:6,maxWidth:"100%"}}/>:
-                      <div style={{height:46,display:"flex",alignItems:"center",justifyContent:"center",fontSize:22}}>✅</div>
-                    }
-                    <div style={{fontSize:11,fontWeight:700,color:"#0b1f3a"}}>{s.label}</div>
-                    {req.comments[s.role]&&<div style={{fontSize:10,color:"#888",marginTop:3,fontStyle:"italic"}}>"{req.comments[s.role]}"</div>}
+                  <div key={s.role} style={{border:"1px solid #27ae60",borderRadius:6,padding:"8px",background:"#f0faf4"}}>
+                    <div style={{fontSize:9,color:"#888",textTransform:"uppercase",marginBottom:2}}>{s.label}</div>
+                    <div style={{fontSize:11,fontWeight:700,color:"#0b1f3a"}}>{req.signatures[s.role]}</div>
+                    {req.comments[s.role]&&<div style={{fontSize:9,color:"#555",fontStyle:"italic",marginTop:2}}>"{req.comments[s.role]}"</div>}
+                    <div style={{fontSize:9,color:"#27ae60",fontWeight:700,marginTop:3}}>✅ Approved</div>
                   </div>
                 ))}
               </div>
             </div>
           )}
-          <div style={{fontSize:10,color:"#aaa",textAlign:"center",marginTop:16,borderTop:"1px solid #e8e4dc",paddingTop:12}}>
-            <div>All Correspondence should be addressed to the DCC Secretary</div>
+          {/* Footer with QR */}
+          <div style={{borderTop:"2px solid #0b1f3a",marginTop:14,paddingTop:12,display:"flex",justifyContent:"space-between",alignItems:"flex-end"}}>
+            <div style={{fontSize:10,color:"#888",lineHeight:1.7,maxWidth:"65%"}}>
+              <div style={{fontWeight:700,color:"#0b1f3a",fontSize:11,marginBottom:3}}>ECWA Lafia DCC — Document Verification</div>
+              Scan QR code to verify full approval chain and document authenticity.<br/>
+              Ref: {req.id} · For internal use only<br/>
+              <div style={{marginTop:4,fontStyle:"italic"}}>All Correspondence to the DCC Secretary</div>
+              <div style={{marginTop:4,color:"#c9a84c",fontWeight:700}}>Powered by Kriz-Technologies</div>
+            </div>
+            <div style={{textAlign:"center",flexShrink:0}}>
+              <DocQR doc={req} type="fund"/>
+              <div style={{fontSize:9,color:"#aaa",marginTop:3}}>Scan to verify</div>
+            </div>
           </div>
         </div>
       </div>
@@ -1270,9 +1314,7 @@ function FinanceMod({ user, users, requests, setRequests, toast, openRecordId, o
 // ── Leave: Detail & Letter ─────────────────────────────────────────────────────
 function LeaveDetail({ leave, user, users, onClose, onAct }) {
   const [note,setNote]=useState(""); const [allowance,setAllowance]=useState(leave.allowance||"");
-  const [showSig,setShowSig]=useState(false);
-  const savedSig = users.find(u=>u.id===user.id)?.signatureImage||null;
-  const [sig,setSig]=useState(savedSig);
+
   const [printMode,setPrintMode]=useState(false);
   const sc=LEAVE_STATUS[leave.status];
   const stage = canActLeave(user, leave, users);
@@ -1377,21 +1419,9 @@ function LeaveDetail({ leave, user, users, onClose, onAct }) {
                   </div>
                 )}
                 <div style={{marginBottom:14}}><label>Note (optional)</label><textarea rows={2} value={note} onChange={e=>setNote(e.target.value)} style={{resize:"vertical"}} placeholder="Add a note..."/></div>
-                <div style={{marginBottom:16}}>
-                  <label>E-Signature *</label>
-                  {sig
-                    ?<div style={{display:"flex",alignItems:"center",gap:10,background:"#f8f6f0",borderRadius:8,padding:"8px 12px"}}>
-                      <img src={sig} alt="sig" style={{height:48,border:"1px solid #e2ddd6",borderRadius:8,background:"#fff"}}/>
-                      <div>
-                        <div style={{fontSize:11,color:"#27ae60",fontWeight:600}}>{savedSig===sig?"✅ Your saved signature":"✅ Signature ready"}</div>
-                        <button className="btn btn-outline" style={{padding:"3px 10px",fontSize:11,marginTop:4}} onClick={()=>setShowSig(true)}>Re-sign</button>
-                      </div>
-                    </div>
-                    :<button className="btn btn-outline" style={{width:"100%"}} onClick={()=>setShowSig(true)}>✏️ Draw Your Signature</button>}
-                </div>
                 <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
-                  <button className="btn btn-red" disabled={!sig} onClick={()=>onAct(leave.id,"reject",note,stage,sig,null)}>Reject</button>
-                  <button className="btn btn-gold" disabled={!sig||(stage==="finance"&&leave.type==="Annual Leave"&&!allowance)} onClick={()=>onAct(leave.id,"approve",note,stage,sig,stage==="finance"&&leave.type==="Annual Leave"?allowance:null)}>
+                  <button className="btn btn-red" onClick={()=>onAct(leave.id,"reject",note,stage,user.name,null)}>Reject</button>
+                  <button className="btn btn-gold" disabled={stage==="finance"&&leave.type==="Annual Leave"&&!allowance} onClick={()=>onAct(leave.id,"approve",note,stage,user.name,stage==="finance"&&leave.type==="Annual Leave"?allowance:null)}>
                     {stage==="chairman"?"✓ Approve Leave & Generate Letter":stage==="auditor"?"✓ Authorise & Forward to Chairman →":"Forward →"}
                   </button>
                 </div>
@@ -1405,7 +1435,6 @@ function LeaveDetail({ leave, user, users, onClose, onAct }) {
           </div>
         </div>
       </div>
-      {showSig&&<SigPad onSave={d=>{setSig(d);setShowSig(false);}} onClose={()=>setShowSig(false)}/>}
     </>
   );
 }
@@ -1475,25 +1504,36 @@ function LeaveLetter({ leave, users, onClose }) {
           <div style={{fontSize:13,lineHeight:1.8,marginBottom:24}}>
             You are expected to resume duty on <strong>{fdate(new Date(new Date(leave.endDate).getTime()+86400000).toISOString().split("T")[0])}</strong>. We wish you a restful leave period.
           </div>
-          {/* Approvals */}
+          {/* Approval Chain */}
           {leave.approvals?.length>0&&(
-            <div style={{marginBottom:24}}>
-              <div style={{fontSize:12,fontWeight:700,color:"#5a5a7a",textTransform:"uppercase",letterSpacing:0.5,marginBottom:12,borderTop:"1px solid #e8e4dc",paddingTop:12}}>Approvals</div>
-              <div style={{display:"grid",gridTemplateColumns:`repeat(${Math.min(leave.approvals.length,3)},1fr)`,gap:16}}>
+            <div style={{marginBottom:14}}>
+              <div style={{fontSize:11,fontWeight:700,color:"#5a5a7a",textTransform:"uppercase",letterSpacing:0.5,marginBottom:8,borderTop:"1px solid #e8e4dc",paddingTop:10}}>Approval Chain</div>
+              <div style={{display:"grid",gridTemplateColumns:`repeat(${Math.min(leave.approvals.length,4)},1fr)`,gap:8}}>
                 {leave.approvals.map((a,i)=>(
-                  <div key={i} style={{textAlign:"center",border:"1px solid #e8e4dc",borderRadius:8,padding:"12px 10px"}}>
-                    {a.sig&&<img src={a.sig} alt="" style={{height:40,marginBottom:6,maxWidth:"100%"}}/>}
+                  <div key={i} style={{border:"1px solid #27ae60",borderRadius:6,padding:"8px",background:"#f0faf4"}}>
+                    <div style={{fontSize:9,color:"#888",textTransform:"uppercase",marginBottom:2}}>{a.position}</div>
                     <div style={{fontSize:11,fontWeight:700,color:"#0b1f3a"}}>{a.name}</div>
-                    <div style={{fontSize:10,color:"#888"}}>{a.position}</div>
-                    <div style={{fontSize:10,color:"#c9a84c"}}>{fdate(a.date)}</div>
+                    <div style={{fontSize:9,color:"#27ae60",marginBottom:2}}>{fdate(a.date)}</div>
+                    {a.note&&<div style={{fontSize:9,color:"#555",fontStyle:"italic"}}>"{a.note}"</div>}
+                    <div style={{fontSize:9,color:"#27ae60",fontWeight:700,marginTop:3}}>✅ Approved</div>
                   </div>
                 ))}
               </div>
             </div>
           )}
-          <div style={{fontSize:11,color:"#888",borderTop:"1px solid #e8e4dc",paddingTop:14,marginTop:10}}>
-            <div style={{textAlign:"center",fontStyle:"italic",marginBottom:6}}>All Correspondence should be addressed to the DCC Secretary</div>
-            <div style={{textAlign:"center",fontSize:10,color:"#aaa"}}>Registered Trustees: Engr. Peter Nathaniel Tsado, Rev. Michael Adamu, Rev. Engr. Justus Ayodele Obilomo, Rev. Prof. Sunday B. Agang, Rev. Prof. Musa A.B. Gaiya, Rev. Dr. Isaac B. Laudarji, Elder Moses Y. Dembo, Prof. Umaru Kiro Kalgo, Pastor Engr. James Asonnibare and Prof. Basil Nwosu</div>
+          {/* Footer with QR */}
+          <div style={{borderTop:"2px solid #0b1f3a",marginTop:14,paddingTop:12,display:"flex",justifyContent:"space-between",alignItems:"flex-end"}}>
+            <div style={{fontSize:10,color:"#888",lineHeight:1.7,maxWidth:"65%"}}>
+              <div style={{fontWeight:700,color:"#0b1f3a",fontSize:11,marginBottom:3}}>ECWA Lafia DCC — Document Verification</div>
+              Scan QR code to verify full approval chain and document authenticity.<br/>
+              Ref: {leave.refNo||leave.id} · For internal use only<br/>
+              <div style={{marginTop:4,fontStyle:"italic"}}>All Correspondence to the DCC Secretary</div>
+              <div style={{marginTop:4,color:"#c9a84c",fontWeight:700}}>Powered by Kriz-Technologies</div>
+            </div>
+            <div style={{textAlign:"center",flexShrink:0}}>
+              <DocQR doc={leave} type="leave"/>
+              <div style={{fontSize:9,color:"#aaa",marginTop:3}}>Scan to verify</div>
+            </div>
           </div>
         </div>
       </div>
@@ -2400,27 +2440,6 @@ function StaffProf({ staff, user, users, canEdit, canEditDetails, lccs, onClose,
             </div>
           )}
 
-          {/* Signature section */}
-          {(canEdit||staff.signatureImage)&&(
-            <div style={{marginBottom:20}}>
-              <div style={{fontSize:12,fontWeight:700,color:"#5a5a7a",textTransform:"uppercase",letterSpacing:0.5,marginBottom:10}}>✍️ Signature</div>
-              {staff.signatureImage?(
-                <div style={{display:"flex",alignItems:"center",gap:14,background:"#f8f6f0",borderRadius:10,padding:"12px 16px"}}>
-                  <img src={staff.signatureImage} alt="Signature" style={{height:52,background:"#fff",border:"1px solid #e2ddd6",borderRadius:8,padding:4}}/>
-                  <div>
-                    <div style={{fontSize:12,color:"#27ae60",fontWeight:600}}>✅ Signature on file</div>
-                    {canEdit&&<SigUpdater staffId={staff.id} onUpdate={onUpdate}/>}
-                  </div>
-                </div>
-              ):canEdit?(
-                <div style={{background:"#fff8e8",border:"1px dashed #c9a84c",borderRadius:10,padding:"14px 16px",textAlign:"center"}}>
-                  <div style={{fontSize:12,color:"#e67e22",marginBottom:8}}>⚠️ No signature on file</div>
-                  <SigUpdater staffId={staff.id} onUpdate={onUpdate}/>
-                </div>
-              ):null}
-            </div>
-          )}
-
           {/* Master Admin — Direct Password Reset */}
           {user.isMaster===true&&staff.id!==0&&(
             <div style={{marginBottom:20,background:"#fff8e8",border:"1px solid #c9a84c",borderRadius:10,padding:"14px 16px"}}>
@@ -2830,18 +2849,21 @@ function IDCard({ staff, onClose }) {
             </div>
           ))}
 
-          {/* Staff Signature on biodata */}
-          {staff.signatureImage&&(
-            <div style={{marginTop:24,paddingTop:16,borderTop:"1px solid #e8e4dc"}}>
-              <div style={{fontSize:11,color:"#5a5a7a",fontWeight:700,textTransform:"uppercase",letterSpacing:0.5,marginBottom:8}}>Staff Signature</div>
-              <img src={staff.signatureImage} alt="Signature" style={{height:52,border:"1px solid #e2ddd6",borderRadius:6,background:"#fafaf8"}}/>
-              <div style={{fontSize:10,color:"#888",marginTop:4}}>{staff.name} — {fdate(today())}</div>
+          {/* QR Code — Staff Verification */}
+          <div style={{marginTop:24,paddingTop:16,borderTop:"1px solid #e8e4dc",display:"flex",justifyContent:"space-between",alignItems:"flex-end"}}>
+            <div style={{fontSize:10,color:"#aaa",maxWidth:"60%"}}>
+              <div style={{fontWeight:700,color:"#0b1f3a",fontSize:11,marginBottom:4}}>ECWA Lafia DCC — Staff Verification</div>
+              Scan QR code to verify staff identity and details.<br/>
+              This document is for internal use only.<br/>
+              Generated {fdate(today())}<br/>
+              <span style={{color:"#c9a84c",fontWeight:700}}>Powered by Kriz-Technologies</span>
             </div>
-          )}
-          <div style={{fontSize:10,color:"#aaa",textAlign:"center",marginTop:20,fontStyle:"italic",borderTop:"1px solid #e8e4dc",paddingTop:12}}>
-            <div>All Correspondence should be addressed to the DCC Secretary</div>
-            <div style={{marginTop:4}}>ECWA Lafia District Church Council · Generated {fdate(today())} · Confidential</div>
+            <div style={{textAlign:"center"}}>
+              <StaffQR staff={staff}/>
+              <div style={{fontSize:9,color:"#aaa",marginTop:4}}>Scan to verify</div>
+            </div>
           </div>
+
         </div>
       </div>
     </div>
@@ -3326,7 +3348,7 @@ function ForgotPassword({ users, pwdReqs, setPwdReqs, onBack }) {
         <div><label style={{color:"rgba(255,255,255,0.5)"}}>Email Address</label><input type="email" placeholder="your@email.com" value={email} onChange={e=>setEmail(e.target.value)} onKeyDown={e=>e.key==="Enter"&&submit()}/></div>
         <button className="btn btn-gold" style={{width:"100%"}} onClick={submit}>Send Reset Request →</button>
         <div style={{background:"rgba(201,168,76,0.08)",border:"1px solid rgba(201,168,76,0.2)",borderRadius:8,padding:"10px 14px",fontSize:11,color:"rgba(255,255,255,0.45)",lineHeight:1.6}}>
-          ℹ️ <strong style={{color:"#c9a84c"}}>First-time admin?</strong> Contact KrizTechs on <a href="tel:08166646683" style={{color:"#c9a84c"}}>08166646683</a> to have your initial password set directly.
+          ℹ️ <strong style={{color:"#c9a84c"}}>First-time admin?</strong> Contact Kriz-Technologies on <a href="tel:08166646683" style={{color:"#c9a84c"}}>08166646683</a> to have your initial password set directly.
         </div>
         <div style={{textAlign:"center"}}><button className="link-btn" onClick={onBack}>← Back to Sign In</button></div>
       </div>
@@ -3386,8 +3408,7 @@ function SignUp({ users, lccs, setLccs, onSignUp, onGo }) {
   const [f,setF]=useState({name:"",email:"",pw:"",pw2:"",phone:"",dob:"",doj:"",dept:"",jobTitle:"",role:"",rank:"",lc_ph:"",lcc:"",newLcc:"",lcc_overseen:"",gradeLevel:""});
   const [er,setEr]=useState(""); const [ok,setOk]=useState(false); const [submitting,setSubmitting]=useState(false);
   const [showPw,setShowPw]=useState(false); const [showPw2,setShowPw2]=useState(false);
-  const [signatureImage,setSignatureImage]=useState(null); const [showSigPad,setShowSigPad]=useState(false);
-  const sigUploadRef=useRef(null); const errRef=useRef(null);
+  const errRef=useRef(null);
   const s=k=>e=>setF(p=>({...p,[k]:e.target.value}));
   const showErr=(msg)=>{setEr(msg);setTimeout(()=>errRef.current?.scrollIntoView({behavior:"smooth",block:"center"}),50);};
   const ALL_ROLES  = getAllOfficeRoles();
@@ -3408,7 +3429,6 @@ function SignUp({ users, lccs, setLccs, onSignUp, onGo }) {
     if(cat==="pastor"&&!f.lc_ph){showErr("Please select your LC / Prayer House.");return;}
     if(cat==="pastor"&&f.lc_ph==="__other__"&&!f.newLcPh){showErr("Please type your church / prayer house name.");return;}
     if(cat==="pastor"&&f.lcc==="__new__"&&!f.newLcc){showErr("Please type the new LCC name.");return;}
-    if(!signatureImage){showErr("Please draw your signature before submitting.");return;}
     try {
       setSubmitting(true);
       if(cat==="pastor"&&f.newLcc&&!lccs.includes(f.newLcc)){setLccs(l=>[...l,f.newLcc]);}
@@ -3427,7 +3447,7 @@ function SignUp({ users, lccs, setLccs, onSignUp, onGo }) {
         lcc:cat==="pastor"?finalLcc:undefined,
         gradeLevel:f.gradeLevel||undefined,
         gradePending:true, approved:false,
-        signatureImage:signatureImage||null,
+        signatureImage:null,
         docs:{},customDocSections:[],transferHistory:[],
       });
       setOk(true);
@@ -3533,29 +3553,12 @@ function SignUp({ users, lccs, setLccs, onSignUp, onGo }) {
               <button type="button" onClick={()=>setShowPw2(v=>!v)} style={{position:"absolute",right:12,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",cursor:"pointer",fontSize:16,color:"#aaa",padding:0}}>{showPw2?"🙈":"👁"}</button>
             </div>
           </div>
-          {/* Signature — required: draw OR upload */}
-          <div>
-            <label style={{color:"rgba(255,255,255,0.5)"}}>Your Signature * <span style={{fontSize:10,color:"#c9a84c",fontStyle:"italic"}}>(used on official documents)</span></label>
-            {signatureImage?(
-              <div style={{background:"rgba(255,255,255,0.05)",border:"1px solid rgba(201,168,76,0.4)",borderRadius:10,padding:12,display:"flex",alignItems:"center",gap:12}}>
-                <img src={signatureImage} alt="sig" style={{height:46,background:"#fff",borderRadius:6,padding:4,maxWidth:180}}/>
-                <div><div style={{fontSize:12,color:"#c9a84c",fontWeight:600}}>✅ Signature captured</div><button type="button" className="btn btn-outline btn-sm" style={{marginTop:6}} onClick={()=>setSignatureImage(null)}>Re-do</button></div>
-              </div>
-            ):(
-              <div style={{display:"flex",gap:10,marginTop:4}}>
-                <button type="button" className="btn btn-outline" style={{flex:1,color:"#c9a84c",borderColor:"rgba(201,168,76,0.4)"}} onClick={()=>setShowSigPad(true)}>✏️ Draw</button>
-                <button type="button" className="btn btn-outline" style={{flex:1,color:"#c9a84c",borderColor:"rgba(201,168,76,0.4)"}} onClick={()=>sigUploadRef.current.click()}>📷 Upload Photo</button>
-              </div>
-            )}
-            <input ref={sigUploadRef} type="file" style={{display:"none"}} accept="image/*" onChange={async e=>{const f=e.target.files[0];if(!f)return;const data=await compressImage(f,{maxW:600,maxH:200,quality:0.85});setSignatureImage(data);e.target.value="";}}/>
-          </div>
           <div className="info-box">ℹ️ All accounts are subject to approval by Admin & Personnel before you can sign in.</div>
           <button className="btn btn-gold" style={{width:"100%",marginTop:4,opacity:submitting?0.7:1}} disabled={submitting} onClick={go}>{submitting?"⏳ Creating Account...":"Create Account →"}</button>
           <div className="divider"><span>already have an account?</span></div>
           <div style={{textAlign:"center"}}><button className="link-btn" onClick={()=>onGo("login")}>Sign In instead</button></div>
         </div>
       )}
-      {showSigPad&&<SigPad onSave={d=>{setSignatureImage(d);setShowSigPad(false);}} onClose={()=>setShowSigPad(false)}/>}
     </div>
   );
 }
@@ -4484,7 +4487,7 @@ function MasterAppointments({ users, setUsers, toast, addLog }) {
           return { ...u,
             name:pastor.name, password:hashed, approved:true,
             mustChangePassword:true, photo:pastor.photo||u.photo,
-            signatureImage:pastor.signatureImage||u.signatureImage,
+            signatureImage:null,
             phone:pastor.phone, rank:pastor.rank,
             appointedPastorId:pastor.id, appointedOn:apptOn };
         }
@@ -4509,7 +4512,7 @@ function MasterAppointments({ users, setUsers, toast, addLog }) {
           name:pastor.name, email:apptEmail, password:hashed,
           role:position.role, category:"office", _apptAccount:true,
           approved:true, mustChangePassword:true,
-          photo:pastor.photo, signatureImage:pastor.signatureImage,
+          photo:pastor.photo, signatureImage:null,
           phone:pastor.phone, rank:pastor.rank,
           dept: position.dept || "admin",
           appointedPastorId:pastor.id, appointedOn:apptOn, appointedBy:"master",
@@ -4530,7 +4533,7 @@ function MasterAppointments({ users, setUsers, toast, addLog }) {
           const existingAcct = prev.find(u => u.role===position.role && u.category==="office" && u._apptAccount);
           let next = prev.map(u => {
             if(current && u.id===current.id) return {...u, _apptTempPw:null, appointment:null, approved:u._suspendedForAppt?true:u.approved, _suspendedForAppt:undefined, appointmentHistory:[...(u.appointmentHistory||[]),{role:position.role,from:u.appointment?.appointedOn||"—",to:apptOn}]};
-            if(existingAcct && u.id===existingAcct.id) return {...u, name:pastor.name, password:hashed, approved:true, mustChangePassword:true, photo:u.photo, signatureImage:u.signatureImage, phone:pastor.phone, rank:pastor.rank, appointedPastorId:pastor.id, appointedOn:apptOn};
+            if(existingAcct && u.id===existingAcct.id) return {...u, name:pastor.name, password:hashed, approved:true, mustChangePassword:true, photo:u.photo, signatureImage:null, phone:pastor.phone, rank:pastor.rank, appointedPastorId:pastor.id, appointedOn:apptOn};
             if(u.id===pastor.id) return {...u, _apptTempPw:tempPw, _apptTempEmail:apptEmail, _apptTempRole:position.label, approved:position.suspendPastor?false:u.approved, _suspendedForAppt:position.suspendPastor?true:undefined, appointment:{role:position.role,label:position.label,active:true,appointedOn:apptOn,appointedBy:"master"}, appointmentHistory:[...(u.appointmentHistory||[]),{role:position.role,from:apptOn,to:null}]};
             return u;
           });
@@ -5275,7 +5278,7 @@ function Dashboard({ user, users, setUsers, requests, setRequests, leaves, setLe
     ...(canS?[{id:"sunday",icon:"⛪",label:"Sunday Reports",badge:0}]:[]),
     ...(canAtt?[{id:"attendance",icon:"🕐",label:"Attendance",badge:0}]:[]),
     ...(canAnn?[{id:"announcements",icon:"📢",label:"Notice Board",badge:unreadAnn}]:[]),
-    {id:"profile",icon:isPastor?"⛪":"👤",label:["personnel","secretary","ads","conf_secretary","chairman","vice_chairman","master"].includes(user.role)?"Personnel":"My Profile",badge:0},
+    {id:"profile",icon:isPastor?"⛪":"👤",label:["personnel","secretary","ads","conf_secretary","chairman","vice_chairman","master"].includes(user.role)?"Personnel":user.role==="lo"?"Personnel":"My Profile",badge:0},
   ];
 
   if(mod===null&&tabs.length===1){setTimeout(()=>setMod(tabs[0].id),0);return <div style={{padding:40,textAlign:"center",color:"#888",fontSize:14}}>Loading...</div>;}
@@ -5411,12 +5414,12 @@ function Dashboard({ user, users, setUsers, requests, setRequests, leaves, setLe
 
       {idCard&&<IDCard staff={myStaffRecord||user} onClose={()=>setIdCard(false)}/>}
 
-      {/* KrizTechs Footer */}
+      {/* Kriz-Technologies Footer */}
       <div style={{textAlign:"center",padding:"20px 16px 12px",marginTop:8}}>
         <div style={{display:"inline-flex",alignItems:"center",gap:8,background:"#fff",border:"1px solid #e8e4dc",borderRadius:20,padding:"6px 16px",boxShadow:"0 2px 8px rgba(11,31,58,0.06)"}}>
           <span style={{fontSize:13}}>⚡</span>
           <span style={{color:"#aaa",fontSize:11}}>Powered by</span>
-          <span style={{color:"#c9a84c",fontSize:12,fontWeight:700,letterSpacing:0.5}}>KrizTechs</span>
+          <span style={{color:"#c9a84c",fontSize:12,fontWeight:700,letterSpacing:0.5}}>Kriz-Technologies</span>
           <span style={{color:"#ddd",fontSize:11}}>·</span>
           <a href="tel:08166646683" style={{color:"#888",fontSize:11,textDecoration:"none"}}>08166646683</a>
         </div>
@@ -5474,8 +5477,8 @@ function sbSave(key, value) {
         payload = value.map(u => ({ ...u, signatureImage: null, photo: null }));
         // Save photos + signatures to a separate table keyed by user id
         const assets = value
-          .filter(u => u.photo || u.signatureImage)
-          .map(u => ({ user_id: String(u.id), photo: u.photo||null, signature: u.signatureImage||null }));
+          .filter(u => u.photo)
+          .map(u => ({ user_id: String(u.id), photo: u.photo||null, signature: null }));
         if (assets.length > 0) {
           for (const asset of assets) {
             supabase.from("user_assets")
@@ -5591,7 +5594,7 @@ export default function App() {
               const assetMap = Object.fromEntries(assets.map(a => [String(a.user_id), a]));
               const merged = map.users.map(u => {
                 const a = assetMap[String(u.id)];
-                return a ? { ...u, photo: a.photo||null, signatureImage: a.signature||null } : u;
+                return a ? { ...u, photo: a.photo||null, signatureImage: null } : u;
               });
               setUsers(merged);
             } else {
@@ -5713,19 +5716,19 @@ export default function App() {
           const newUser = {id:newId,...u};
           const updated = [...latest, newUser];
           // Strip sig from DB payload — keep full sig in local state only
-          const dbPayload = updated.map(x=>({...x, signatureImage: x.signatureImage && x.signatureImage.length > 500 ? "[sig]" : x.signatureImage}));
+          const dbPayload = updated.map(x=>({...x, signatureImage: null}));
           const { error:saveErr } = await supabase.from("app_state")
             .upsert({ key:"users", value:dbPayload, updated_at:new Date().toISOString() }, { onConflict:"key" });
           if(saveErr) throw new Error("Save failed: " + saveErr.message);
           setUsers(updated);
         }} onGo={setScr}/>
       }
-      {/* KrizTechs Branding */}
+      {/* Kriz-Technologies Branding */}
       <div style={{marginTop:32,textAlign:"center"}} className="fade-in">
         <div style={{display:"inline-flex",alignItems:"center",gap:8,background:"rgba(255,255,255,0.05)",border:"1px solid rgba(201,168,76,0.15)",borderRadius:20,padding:"8px 18px"}}>
           <span style={{fontSize:14}}>⚡</span>
           <span style={{color:"rgba(255,255,255,0.35)",fontSize:11,letterSpacing:0.5}}>Powered by</span>
-          <span style={{color:"#c9a84c",fontSize:12,fontWeight:700,letterSpacing:1}}>KrizTechs</span>
+          <span style={{color:"#c9a84c",fontSize:12,fontWeight:700,letterSpacing:1}}>Kriz-Technologies</span>
           <span style={{color:"rgba(255,255,255,0.2)",fontSize:11}}>·</span>
           <a href="tel:08166646683" style={{color:"rgba(201,168,76,0.7)",fontSize:11,textDecoration:"none",letterSpacing:0.5}}>08166646683</a>
         </div>
