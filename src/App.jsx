@@ -5526,58 +5526,45 @@ Click OK to download an Excel archive first, or Cancel to trim without saving.`)
 // ── Isolated print helper — only prints the target element, nothing else ──────
 function printElement(elementId) {
   const el = document.getElementById(elementId);
-  if(!el) { window.print(); return; }
-  // Clone the node so images/canvases are preserved
-  const clone = el.cloneNode(true);
-  // Copy canvas elements (QR codes rendered into canvas)
-  const srcCanvases = el.querySelectorAll("canvas");
-  const dstCanvases = clone.querySelectorAll("canvas");
-  srcCanvases.forEach((src, i) => {
-    const dst = dstCanvases[i];
-    if(dst) {
-      dst.width = src.width;
-      dst.height = src.height;
-      dst.getContext("2d").drawImage(src, 0, 0);
-    }
-  });
-  // Convert canvas to img in clone so it survives the new window
-  clone.querySelectorAll("canvas").forEach(cv => {
+  if(!el) return;
+
+  // Step 1: Convert all canvas elements (QR codes) to <img> tags in-place
+  // so they survive the @media print context
+  const canvasReplacements = [];
+  el.querySelectorAll("canvas").forEach(canvas => {
+    const dataUrl = canvas.toDataURL("image/png");
     const img = document.createElement("img");
-    img.src = cv.toDataURL();
-    img.style.cssText = cv.style.cssText;
-    img.width = cv.width;
-    img.height = cv.height;
-    cv.parentNode.replaceChild(img, cv);
+    img.src = dataUrl;
+    img.width = canvas.width;
+    img.height = canvas.height;
+    img.style.display = "block";
+    canvas.parentNode.insertBefore(img, canvas);
+    canvas.style.display = "none";
+    canvasReplacements.push({ canvas, img });
   });
-  // Copy computed styles from all elements
-  const win = window.open("","_blank","width=820,height=1000");
-  if(!win) { alert("Please allow popups for this site to print."); return; }
-  // Grab all stylesheets from current page
-  const styles = Array.from(document.styleSheets).map(ss => {
-    try { return Array.from(ss.cssRules).map(r=>r.cssText).join("\n"); } catch(e){ return ""; }
-  }).join("\n");
-  win.document.write(`<!DOCTYPE html><html><head><title>ECWA Lafia DCC</title>
-  <style>
-    *{box-sizing:border-box;}
-    body{font-family:'Segoe UI',sans-serif;font-size:12px;color:#222;margin:0;padding:16px;}
-    table{width:100%;border-collapse:collapse;}
-    td,th{padding:5px 10px;border-bottom:1px solid #e8e4dc;}
-    img{max-width:100%;}
-    .no-print{display:none!important;}
-    @page{margin:10mm;}
-    ${styles}
-  </style></head><body></body></html>`);
-  win.document.close();
-  win.document.body.appendChild(clone);
-  // Wait for images to load then print
-  const imgs = clone.querySelectorAll("img");
-  let loaded = 0;
-  if(imgs.length===0) { setTimeout(()=>{ win.focus(); win.print(); win.close(); }, 300); return; }
-  imgs.forEach(img => {
-    if(img.complete) { loaded++; if(loaded===imgs.length){ setTimeout(()=>{ win.focus(); win.print(); win.close(); },300); } }
-    else {
-      img.onload = img.onerror = () => { loaded++; if(loaded===imgs.length){ setTimeout(()=>{ win.focus(); win.print(); win.close(); },300); } };
-    }
+
+  // Step 2: Inject print styles — hide everything on the page except our element
+  const printStyle = document.createElement("style");
+  printStyle.id = "__ecwa_print__";
+  printStyle.innerHTML = [
+    "@media print {",
+    "  body * { visibility: hidden !important; }",
+    "  #" + elementId + ", #" + elementId + " * { visibility: visible !important; }",
+    "  #" + elementId + " { position: fixed !important; top: 0 !important; left: 0 !important; width: 100% !important; background: white !important; z-index: 99999 !important; padding: 16px !important; box-sizing: border-box !important; }",
+    "  .no-print { display: none !important; }",
+    "  @page { margin: 10mm; }",
+    "}"
+  ].join("\n");
+  document.head.appendChild(printStyle);
+
+  // Step 3: Print
+  window.print();
+
+  // Step 4: Restore everything
+  printStyle.remove();
+  canvasReplacements.forEach(({ canvas, img }) => {
+    canvas.style.display = "";
+    img.remove();
   });
 }
 
