@@ -964,7 +964,7 @@ function DocQR({ doc, type }) {
 function FinancePrintForm({ req, onClose }) {
   return(
     <div className="overlay" style={{padding:0,alignItems:"flex-start",overflowY:"auto"}}>
-      <div style={{background:"#fff",width:"100%",maxWidth:720,margin:"20px auto",borderRadius:16,boxShadow:"0 24px 60px rgba(11,31,58,0.3)",overflow:"hidden"}}>
+      <div className="modal" style={{background:"#fff",width:"100%",maxWidth:720,margin:"20px auto",borderRadius:16,boxShadow:"0 24px 60px rgba(11,31,58,0.3)",overflow:"hidden"}}>
         <div style={{background:"#0b1f3a",padding:"14px 24px",display:"flex",justifyContent:"space-between",alignItems:"center"}} className="no-print">
           <span style={{fontFamily:"Georgia,serif",color:"#c9a84c",fontSize:16}}>Approved Finance Request</span>
           <div style={{display:"flex",gap:10}}>
@@ -5527,44 +5527,25 @@ Click OK to download an Excel archive first, or Cancel to trim without saving.`)
 function printElement(elementId) {
   const el = document.getElementById(elementId);
   if(!el) return;
-
-  // Step 1: Convert all canvas elements (QR codes) to <img> tags in-place
-  // so they survive the @media print context
-  const canvasReplacements = [];
+  // Convert QR canvases to <img> so they print correctly
+  const replaced = [];
   el.querySelectorAll("canvas").forEach(canvas => {
-    const dataUrl = canvas.toDataURL("image/png");
-    const img = document.createElement("img");
-    img.src = dataUrl;
-    img.width = canvas.width;
-    img.height = canvas.height;
-    img.style.display = "block";
-    canvas.parentNode.insertBefore(img, canvas);
-    canvas.style.display = "none";
-    canvasReplacements.push({ canvas, img });
+    try {
+      const img = document.createElement("img");
+      img.src = canvas.toDataURL("image/png");
+      img.width = canvas.offsetWidth || canvas.width;
+      img.height = canvas.offsetHeight || canvas.height;
+      canvas.parentNode.insertBefore(img, canvas);
+      canvas.style.display = "none";
+      replaced.push({ canvas, img });
+    } catch(e) {}
   });
-
-  // Step 2: Inject print styles — hide everything on the page except our element
-  const printStyle = document.createElement("style");
-  printStyle.id = "__ecwa_print__";
-  printStyle.innerHTML = [
-    "@media print {",
-    "  body * { visibility: hidden !important; }",
-    "  #" + elementId + ", #" + elementId + " * { visibility: visible !important; }",
-    "  #" + elementId + " { position: fixed !important; top: 0 !important; left: 0 !important; width: 100% !important; background: white !important; z-index: 99999 !important; padding: 16px !important; box-sizing: border-box !important; }",
-    "  .no-print { display: none !important; }",
-    "  @page { margin: 10mm; }",
-    "}"
-  ].join("\n");
-  document.head.appendChild(printStyle);
-
-  // Step 3: Print
+  // The existing @media print CSS already handles overlay/modal layout correctly
   window.print();
-
-  // Step 4: Restore everything
-  printStyle.remove();
-  canvasReplacements.forEach(({ canvas, img }) => {
+  // Restore canvases
+  replaced.forEach(({ canvas, img }) => {
     canvas.style.display = "";
-    img.remove();
+    if(img.parentNode) img.parentNode.removeChild(img);
   });
 }
 
