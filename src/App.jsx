@@ -5527,24 +5527,58 @@ Click OK to download an Excel archive first, or Cancel to trim without saving.`)
 function printElement(elementId) {
   const el = document.getElementById(elementId);
   if(!el) { window.print(); return; }
-  const styleId = "__print_style__";
-  let style = document.getElementById(styleId);
-  if(!style) { style = document.createElement("style"); style.id = styleId; document.head.appendChild(style); }
-  style.innerHTML = `@media print {
-    body > * { display: none !important; }
-    #${elementId} { display: block !important; position: static !important; visibility: visible !important; }
-    #${elementId} * { visibility: visible !important; }
-    .no-print { display: none !important; }
-    @page { margin: 12mm; }
-  }`;
-  const originalParent = el.parentNode;
-  const placeholder = document.createElement("span");
-  originalParent.insertBefore(placeholder, el);
-  document.body.appendChild(el);
-  window.print();
-  originalParent.insertBefore(el, placeholder);
-  placeholder.remove();
-  style.innerHTML = "";
+  // Clone the node so images/canvases are preserved
+  const clone = el.cloneNode(true);
+  // Copy canvas elements (QR codes rendered into canvas)
+  const srcCanvases = el.querySelectorAll("canvas");
+  const dstCanvases = clone.querySelectorAll("canvas");
+  srcCanvases.forEach((src, i) => {
+    const dst = dstCanvases[i];
+    if(dst) {
+      dst.width = src.width;
+      dst.height = src.height;
+      dst.getContext("2d").drawImage(src, 0, 0);
+    }
+  });
+  // Convert canvas to img in clone so it survives the new window
+  clone.querySelectorAll("canvas").forEach(cv => {
+    const img = document.createElement("img");
+    img.src = cv.toDataURL();
+    img.style.cssText = cv.style.cssText;
+    img.width = cv.width;
+    img.height = cv.height;
+    cv.parentNode.replaceChild(img, cv);
+  });
+  // Copy computed styles from all elements
+  const win = window.open("","_blank","width=820,height=1000");
+  if(!win) { alert("Please allow popups for this site to print."); return; }
+  // Grab all stylesheets from current page
+  const styles = Array.from(document.styleSheets).map(ss => {
+    try { return Array.from(ss.cssRules).map(r=>r.cssText).join("\n"); } catch(e){ return ""; }
+  }).join("\n");
+  win.document.write(`<!DOCTYPE html><html><head><title>ECWA Lafia DCC</title>
+  <style>
+    *{box-sizing:border-box;}
+    body{font-family:'Segoe UI',sans-serif;font-size:12px;color:#222;margin:0;padding:16px;}
+    table{width:100%;border-collapse:collapse;}
+    td,th{padding:5px 10px;border-bottom:1px solid #e8e4dc;}
+    img{max-width:100%;}
+    .no-print{display:none!important;}
+    @page{margin:10mm;}
+    ${styles}
+  </style></head><body></body></html>`);
+  win.document.close();
+  win.document.body.appendChild(clone);
+  // Wait for images to load then print
+  const imgs = clone.querySelectorAll("img");
+  let loaded = 0;
+  if(imgs.length===0) { setTimeout(()=>{ win.focus(); win.print(); win.close(); }, 300); return; }
+  imgs.forEach(img => {
+    if(img.complete) { loaded++; if(loaded===imgs.length){ setTimeout(()=>{ win.focus(); win.print(); win.close(); },300); } }
+    else {
+      img.onload = img.onerror = () => { loaded++; if(loaded===imgs.length){ setTimeout(()=>{ win.focus(); win.print(); win.close(); },300); } };
+    }
+  });
 }
 
 // ── Password hashing (SHA-256 via Web Crypto API — no library needed) ─────────
