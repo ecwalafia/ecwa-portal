@@ -975,13 +975,13 @@ function FinancePrintForm({ req, onClose }) {
         <div id="finance-print-doc" style={{padding:"32px 40px",fontFamily:"'Segoe UI',sans-serif"}}>
           {/* Letterhead */}
           <div style={{textAlign:"center",borderBottom:"3px double #0b1f3a",paddingBottom:18,marginBottom:24}}>
-            <div style={{display:"flex",justifyContent:"center",alignItems:"center",gap:16,marginBottom:8}}>
+            <div style={{display:"flex",justifyContent:"center",alignItems:"center",gap:12,marginBottom:4}}>
               <img src={LOGO_SVG} alt="ECWA" style={{width:66,height:66,borderRadius:"50%",objectFit:"cover",border:"2px solid #c9a84c"}}/>
               <div style={{textAlign:"left"}}>
                 <div style={{fontFamily:"Georgia,serif",fontSize:9,color:"#555",letterSpacing:1}}>EVANGELICAL CHURCH WINNING ALL</div>
                 <div style={{fontFamily:"Georgia,serif",fontSize:17,fontWeight:700,color:"#0b1f3a",lineHeight:1.2}}>ECWA Lafia District Church Council (LDCC)</div>
-                <div style={{fontSize:11,color:"#666",marginTop:3}}>Beside New Tomatoes Market, P.O. Box 329, Shinge Road Lafia, Nasarawa State</div>
-                <div style={{fontSize:11,color:"#555",marginTop:2}}>E-MAIL: lafiadcc@ecwang.org &nbsp;|&nbsp; Tel: 08166646683, 09053971264</div>
+                <div style={{fontSize:10,color:"#666",marginTop:1}}>Beside New Tomatoes Market, P.O. Box 329, Shinge Road Lafia, Nasarawa State</div>
+                <div style={{fontSize:10,color:"#555",marginTop:1}}>E-MAIL: lafiadcc@ecwang.org &nbsp;|&nbsp; Tel: 08166646683, 09053971264</div>
               </div>
             </div>
             <div style={{display:"inline-block",background:"#c9a84c",color:"#fff",padding:"3px 20px",borderRadius:20,fontSize:11,fontWeight:700,marginTop:6,letterSpacing:1}}>APPROVED FINANCIAL REQUEST FORM</div>
@@ -991,7 +991,7 @@ function FinancePrintForm({ req, onClose }) {
             <div><strong>Ref:</strong> {req.id}</div>
             <div><strong>Date:</strong> {fdate(req.date)}</div>
           </div>
-          <table style={{width:"100%",borderCollapse:"collapse",fontSize:13,marginBottom:20}}>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:11,marginBottom:6}}>
             {[
               ["Requester Name", req.requester],
               ["Position / Role", req.requesterRole||"—"],
@@ -1043,21 +1043,21 @@ function FinancePrintForm({ req, onClose }) {
           {/* Approval Chain */}
           {Object.keys(req.signatures).length>0&&(
             <div style={{marginBottom:14}}>
-              <div style={{fontSize:11,fontWeight:700,color:"#5a5a7a",textTransform:"uppercase",letterSpacing:0.5,marginBottom:8,borderTop:"1px solid #e8e4dc",paddingTop:10}}>Approval Chain</div>
+              <div style={{fontSize:10,fontWeight:700,color:"#5a5a7a",textTransform:"uppercase",letterSpacing:0.5,marginBottom:5,borderTop:"1px solid #e8e4dc",paddingTop:6}}>Approval Chain</div>
               <div style={{display:"grid",gridTemplateColumns:`repeat(${Math.min(F_STEPS.filter(s=>req.signatures[s.role]).length,4)},1fr)`,gap:8}}>
                 {F_STEPS.filter(s=>req.signatures[s.role]).map(s=>(
-                  <div key={s.role} style={{border:"1px solid #27ae60",borderRadius:6,padding:"8px",background:"#f0faf4"}}>
+                  <div key={s.role} style={{border:"1px solid #27ae60",borderRadius:5,padding:"5px 4px",background:"#f0faf4",textAlign:"center"}}>
                     <div style={{fontSize:9,color:"#888",textTransform:"uppercase",marginBottom:2}}>{s.label}</div>
                     <div style={{fontSize:11,fontWeight:700,color:"#0b1f3a"}}>{req.signatures[s.role]}</div>
                     {req.comments[s.role]&&<div style={{fontSize:9,color:"#555",fontStyle:"italic",marginTop:2}}>"{req.comments[s.role]}"</div>}
-                    <div style={{fontSize:9,color:"#27ae60",fontWeight:700,marginTop:3}}>✅ Approved</div>
+                    <div style={{fontSize:8,color:"#27ae60",fontWeight:700}}>✅ Approved</div>
                   </div>
                 ))}
               </div>
             </div>
           )}
           {/* Footer with QR */}
-          <div style={{borderTop:"2px solid #0b1f3a",marginTop:14,paddingTop:12,display:"flex",justifyContent:"space-between",alignItems:"flex-end"}}>
+          <div style={{borderTop:"2px solid #0b1f3a",marginTop:8,paddingTop:6,display:"flex",justifyContent:"space-between",alignItems:"flex-end"}}>
             <div style={{fontSize:10,color:"#888",lineHeight:1.7,maxWidth:"65%"}}>
               <div style={{fontWeight:700,color:"#0b1f3a",fontSize:11,marginBottom:3}}>ECWA Lafia DCC — Document Verification</div>
               Scan QR code to verify full approval chain and document authenticity.<br/>
@@ -1452,22 +1452,22 @@ function LeaveLetter({ leave, users, onClose }) {
             <button onClick={onClose} style={{background:"none",border:"none",color:"#fff",fontSize:24,cursor:"pointer"}}>×</button>
           </div>
         </div>
-        <div style={{padding:"32px 40px",fontFamily:"'Segoe UI','Trebuchet MS',sans-serif"}} id="leave-letter">
+        <div style={{padding:"16px 28px",fontFamily:"'Segoe UI','Trebuchet MS',sans-serif"}} id="leave-letter">
           {/* Letterhead */}
-          <div style={{textAlign:"center",borderBottom:"3px double #0b1f3a",paddingBottom:20,marginBottom:24}}>
-            <div style={{display:"flex",justifyContent:"center",alignItems:"center",gap:16,marginBottom:8}}>
-              <img src={LOGO} alt="ECWA" style={{width:70,height:70,borderRadius:"50%",objectFit:"cover",border:"2px solid #c9a84c"}}/>
+          <div style={{textAlign:"center",borderBottom:"3px double #0b1f3a",paddingBottom:8,marginBottom:10}}>
+            <div style={{display:"flex",justifyContent:"center",alignItems:"center",gap:12,marginBottom:4}}>
+              <img src={LOGO} alt="ECWA" style={{width:52,height:52,borderRadius:"50%",objectFit:"cover",border:"2px solid #c9a84c"}}/>
               <div style={{textAlign:"left"}}>
                 <div style={{fontFamily:"Georgia,serif",fontSize:10,color:"#555",letterSpacing:1}}>EVANGELICAL CHURCH WINNING ALL</div>
-                <div style={{fontFamily:"Georgia,serif",fontSize:18,fontWeight:700,color:"#0b1f3a",lineHeight:1.2}}>ECWA Lafia District Church Council (LDCC)</div>
-                <div style={{fontSize:11,color:"#666",marginTop:3}}>Beside New Tomatoes Market, P.O. Box 329, Shinge Road Lafia, Nasarawa State</div>
-                <div style={{fontSize:11,color:"#555",marginTop:2}}>E-MAIL: lafiadcc@ecwang.org &nbsp;|&nbsp; Tel: 08166646683, 09053971264</div>
+                <div style={{fontFamily:"Georgia,serif",fontSize:15,fontWeight:700,color:"#0b1f3a",lineHeight:1.2}}>ECWA Lafia District Church Council (LDCC)</div>
+                <div style={{fontSize:10,color:"#666",marginTop:1}}>Beside New Tomatoes Market, P.O. Box 329, Shinge Road Lafia, Nasarawa State</div>
+                <div style={{fontSize:10,color:"#555",marginTop:1}}>E-MAIL: lafiadcc@ecwang.org &nbsp;|&nbsp; Tel: 08166646683, 09053971264</div>
               </div>
             </div>
-            <div style={{display:"inline-block",background:"#c9a84c",color:"#fff",padding:"3px 20px",borderRadius:20,fontSize:11,fontWeight:700,marginTop:6,letterSpacing:1}}>STAFF LEAVE APPROVAL LETTER</div>
+            <div style={{display:"inline-block",background:"#c9a84c",color:"#fff",padding:"2px 16px",borderRadius:20,fontSize:10,fontWeight:700,marginTop:4,letterSpacing:1}}>STAFF LEAVE APPROVAL LETTER</div>
           </div>
           {/* Ref & Date */}
-          <div style={{display:"flex",justifyContent:"space-between",marginBottom:20,fontSize:13}}>
+          <div style={{display:"flex",justifyContent:"space-between",marginBottom:8,fontSize:12}}>
             <div><strong>Ref:</strong> {leave.refNo||leave.id}</div>
             <div><strong>Date:</strong> {fdate(today())}</div>
           </div>
@@ -1477,11 +1477,11 @@ function LeaveLetter({ leave, users, onClose }) {
             {staff?.category==="pastor"?<>{staff.rank} · {staff.lc_ph}<br/>{staff.lcc} LCC</>:<>{roleDisplay(staff?.role||leave.requester_role)}<br/>{DEPARTMENTS.find(d=>d.id===staff?.dept)?.label||""} Department</>}
           </div>
           <div style={{marginBottom:20,fontSize:13,lineHeight:1.8}}>
-            <strong>Dear {staff?.name?.split(" ")[0]||leave.requester},</strong><br/><br/>
+            <strong>Dear {staff?.name?.split(" ")[0]||leave.requester},</strong><br/>
             Your application for leave has been reviewed and approved. Please find below the details of your approved leave:
           </div>
           {/* Details table */}
-          <table style={{width:"100%",borderCollapse:"collapse",fontSize:13,marginBottom:20}}>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:11,marginBottom:6}}>
             {[
               ["Staff Name", staff?.name||leave.requester],
               ["Staff ID", staff?`ECWA-${String(staff.id).padStart(4,"0")}`:"—"],
@@ -1496,8 +1496,8 @@ function LeaveLetter({ leave, users, onClose }) {
               ["Leave Allowance", leave.allowance?money(leave.allowance):"Nil"],
             ].map(([k,v])=>(
               <tr key={k} style={{borderBottom:"1px solid #f0ede8"}}>
-                <td style={{padding:"8px 12px",background:"#f8f6f0",fontWeight:600,width:"40%",color:"#555"}}>{k}</td>
-                <td style={{padding:"8px 12px",fontWeight:600,color:"#0b1f3a"}}>{v}</td>
+                <td style={{padding:"4px 10px",background:"#f8f6f0",fontWeight:600,width:"38%",color:"#555"}}>{k}</td>
+                <td style={{padding:"4px 10px",fontWeight:600,color:"#0b1f3a"}}>{v}</td>
               </tr>
             ))}
           </table>
@@ -1507,22 +1507,22 @@ function LeaveLetter({ leave, users, onClose }) {
           {/* Approval Chain */}
           {leave.approvals?.length>0&&(
             <div style={{marginBottom:14}}>
-              <div style={{fontSize:11,fontWeight:700,color:"#5a5a7a",textTransform:"uppercase",letterSpacing:0.5,marginBottom:8,borderTop:"1px solid #e8e4dc",paddingTop:10}}>Approval Chain</div>
-              <div style={{display:"grid",gridTemplateColumns:`repeat(${Math.min(leave.approvals.length,4)},1fr)`,gap:8}}>
+              <div style={{fontSize:10,fontWeight:700,color:"#5a5a7a",textTransform:"uppercase",letterSpacing:0.5,marginBottom:5,borderTop:"1px solid #e8e4dc",paddingTop:6}}>Approval Chain</div>
+              <div style={{display:"grid",gridTemplateColumns:`repeat(${Math.min(leave.approvals.length,5)},1fr)`,gap:5}}>
                 {leave.approvals.map((a,i)=>(
-                  <div key={i} style={{border:"1px solid #27ae60",borderRadius:6,padding:"8px",background:"#f0faf4"}}>
-                    <div style={{fontSize:9,color:"#888",textTransform:"uppercase",marginBottom:2}}>{a.position}</div>
-                    <div style={{fontSize:11,fontWeight:700,color:"#0b1f3a"}}>{a.name}</div>
-                    <div style={{fontSize:9,color:"#27ae60",marginBottom:2}}>{fdate(a.date)}</div>
-                    {a.note&&<div style={{fontSize:9,color:"#555",fontStyle:"italic"}}>"{a.note}"</div>}
-                    <div style={{fontSize:9,color:"#27ae60",fontWeight:700,marginTop:3}}>✅ Approved</div>
+                  <div key={i} style={{border:"1px solid #27ae60",borderRadius:5,padding:"5px 4px",background:"#f0faf4",textAlign:"center"}}>
+                    <div style={{fontSize:8,color:"#888",textTransform:"uppercase",marginBottom:1}}>{a.position}</div>
+                    <div style={{fontSize:9,fontWeight:700,color:"#0b1f3a",marginBottom:1}}>{a.name}</div>
+                    <div style={{fontSize:8,color:"#27ae60",marginBottom:1}}>{fdate(a.date)}</div>
+                    {a.note&&<div style={{fontSize:8,color:"#555",fontStyle:"italic",marginBottom:1}}>"{a.note}"</div>}
+                    <div style={{fontSize:8,color:"#27ae60",fontWeight:700}}>✅ Approved</div>
                   </div>
                 ))}
               </div>
             </div>
           )}
           {/* Footer with QR */}
-          <div style={{borderTop:"2px solid #0b1f3a",marginTop:14,paddingTop:12,display:"flex",justifyContent:"space-between",alignItems:"flex-end"}}>
+          <div style={{borderTop:"2px solid #0b1f3a",marginTop:8,paddingTop:6,display:"flex",justifyContent:"space-between",alignItems:"flex-end"}}>
             <div style={{fontSize:10,color:"#888",lineHeight:1.7,maxWidth:"65%"}}>
               <div style={{fontWeight:700,color:"#0b1f3a",fontSize:11,marginBottom:3}}>ECWA Lafia DCC — Document Verification</div>
               Scan QR code to verify full approval chain and document authenticity.<br/>
@@ -2737,13 +2737,13 @@ function IDCard({ staff, onClose }) {
         <div style={{padding:"28px 36px"}} id="bio-print">
           {/* Letterhead */}
           <div style={{textAlign:"center",borderBottom:"3px double #0b1f3a",paddingBottom:18,marginBottom:24}}>
-            <div style={{display:"flex",justifyContent:"center",alignItems:"center",gap:16,marginBottom:8}}>
-              <img src={LOGO} alt="ECWA" style={{width:70,height:70,borderRadius:"50%",objectFit:"cover",border:"2px solid #c9a84c"}}/>
+            <div style={{display:"flex",justifyContent:"center",alignItems:"center",gap:12,marginBottom:4}}>
+              <img src={LOGO} alt="ECWA" style={{width:52,height:52,borderRadius:"50%",objectFit:"cover",border:"2px solid #c9a84c"}}/>
               <div style={{textAlign:"left"}}>
                 <div style={{fontFamily:"Georgia,serif",fontSize:10,color:"#555",letterSpacing:1}}>EVANGELICAL CHURCH WINNING ALL</div>
-                <div style={{fontFamily:"Georgia,serif",fontSize:18,fontWeight:700,color:"#0b1f3a",lineHeight:1.2}}>ECWA Lafia District Church Council (LDCC)</div>
-                <div style={{fontSize:11,color:"#666",marginTop:3}}>Beside New Tomatoes Market, P.O. Box 329, Shinge Road Lafia, Nasarawa State</div>
-                <div style={{fontSize:11,color:"#555",marginTop:2}}>E-MAIL: lafiadcc@ecwang.org &nbsp;|&nbsp; Tel: 08166646683, 09053971264</div>
+                <div style={{fontFamily:"Georgia,serif",fontSize:15,fontWeight:700,color:"#0b1f3a",lineHeight:1.2}}>ECWA Lafia District Church Council (LDCC)</div>
+                <div style={{fontSize:10,color:"#666",marginTop:1}}>Beside New Tomatoes Market, P.O. Box 329, Shinge Road Lafia, Nasarawa State</div>
+                <div style={{fontSize:10,color:"#555",marginTop:1}}>E-MAIL: lafiadcc@ecwang.org &nbsp;|&nbsp; Tel: 08166646683, 09053971264</div>
               </div>
             </div>
             <div style={{display:"inline-block",background:"#0b1f3a",color:"#c9a84c",padding:"3px 18px",borderRadius:20,fontSize:11,fontWeight:700,marginTop:8,letterSpacing:1}}>STAFF PERSONAL DATA FORM</div>
