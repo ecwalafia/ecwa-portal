@@ -4248,7 +4248,7 @@ function LOAppointments({ users, setUsers, lccs, toast, addLog, user }) {
     !u.appointment?.active && !u.loAppointment?.active &&
     (!filter || u.name?.toLowerCase().includes(filter.toLowerCase()))
   );
-  const loEmail = lcc => "lo." + lcc.toLowerCase().replace(/\s+/g,".") + "@ecwalafia.org";
+  const loEmail = lcc => "LO"+lcc.replace(/[\s']/g,"")+"LCC@ecwalafia.org";
 
   const appoint = async (lcc, pastor) => {
     const chars = "ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
@@ -4914,7 +4914,7 @@ function MasterStaff({ users, setUsers, toast, addLog }) {
   // Appointment roles (chairman, vice_chairman, secretary, ads, lo) managed via Appointments tab
   const ROLES = ["cashier","accountant","auditor","conf_secretary","personnel","pastor","ems_coordinator","lecturer","support"];
 
-  const pendingAccounts = users.filter(u=>!u.approved && !u._suspendedForAppt);
+  const pendingAccounts = users.filter(u=>!u.approved && !u._apptAccount && !u._suspendedForAppt);
 
   return (
     <div>
