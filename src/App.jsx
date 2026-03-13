@@ -4911,20 +4911,34 @@ function MasterStaff({ users, setUsers, toast, addLog }) {
                   <div style={{fontSize:11,color:"rgba(255,255,255,0.4)",marginTop:2}}>{u.email} · {u.category==="pastor"?u.rank:u.jobTitle||roleDisplay(u.role)} · {u.category==="pastor"?u.lcc+" LCC":""}</div>
                 </div>
                 <div style={{display:"flex",gap:8}}>
-                  <button onClick={()=>{
+                  <button onClick={async ()=>{
                     const email = u.email.toLowerCase();
-                    setUsers(us=>{
-                      const dupeIds = us.filter(x=>x.email.toLowerCase()===email && x.id!==u.id && !x.approved).map(x=>x.id);
-                      return us.filter(x=>!dupeIds.includes(x.id)).map(x=>x.id===u.id?{...x,approved:true}:x);
-                    });
+                    const updated = users
+                      .filter(x=>!(x.email.toLowerCase()===email && x.id!==u.id && !x.approved))
+                      .map(x=>x.id===u.id?{...x,approved:true}:x);
+                    setUsers(updated);
                     addLog("APPROVE_ACCOUNT","Approved account of "+u.name);
-                    toast("✅ "+u.name+" approved. They can now sign in.");
+                    // Save immediately to DB — don't rely on debounce
+                    try {
+                      const payload = updated.map(x=>({...x,photo:null,signatureImage:null}));
+                      const {error} = await supabase.from("app_state")
+                        .upsert({key:"users",value:payload,updated_at:new Date().toISOString()},{onConflict:"key"});
+                      if(error) toast("⚠️ Approved locally but DB save failed: "+error.message,"danger");
+                      else toast("✅ "+u.name+" approved. They can now sign in.");
+                    } catch(e){ toast("✅ "+u.name+" approved (offline)."); }
                   }} style={{background:"rgba(39,174,96,0.2)",border:"1px solid rgba(39,174,96,0.5)",color:"#27ae60",borderRadius:6,padding:"5px 14px",cursor:"pointer",fontSize:12,fontWeight:700}}>✅ Approve</button>
-                  <button onClick={()=>{
+                  <button onClick={async ()=>{
                     const email = u.email.toLowerCase();
-                    setUsers(us=>us.filter(x=>x.email.toLowerCase()!==email));
+                    const updated = users.filter(x=>x.email.toLowerCase()!==email);
+                    setUsers(updated);
                     addLog("REJECT_ACCOUNT","Rejected account of "+u.name);
-                    toast("🗑️ "+u.name+" rejected and removed.");
+                    // Save immediately to DB
+                    try {
+                      const payload = updated.map(x=>({...x,photo:null,signatureImage:null}));
+                      await supabase.from("app_state")
+                        .upsert({key:"users",value:payload,updated_at:new Date().toISOString()},{onConflict:"key"});
+                      toast("🗑️ "+u.name+" rejected and removed.");
+                    } catch(e){ toast("🗑️ "+u.name+" rejected (offline)."); }
                   }} style={{background:"rgba(192,57,43,0.15)",border:"1px solid rgba(192,57,43,0.3)",color:"#e74c3c",borderRadius:6,padding:"5px 10px",cursor:"pointer",fontSize:12}}>🗑️ Reject</button>
                 </div>
               </div>
