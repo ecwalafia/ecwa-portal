@@ -2630,31 +2630,7 @@ function PersonnelMod({ user, users, setUsers, lccs, toast }) {
 
   return(
     <div>
-      {/* Pending approvals banner — only for admins */}
-      {isAdmin && !user.isMaster && pendingAccounts.length>0&&(
-        <div className="card" style={{marginBottom:18,padding:"16px 20px",borderLeft:"4px solid #e67e22"}}>
-          <div style={{fontFamily:"Georgia,serif",fontSize:15,fontWeight:700,color:"#0b1f3a",marginBottom:12}}>⏳ Pending Account Approvals ({pendingAccounts.length})</div>
-          <div style={{display:"flex",flexDirection:"column",gap:8}}>
-            {pendingAccounts.map(u=>(
-              <div key={u.id} style={{display:"flex",alignItems:"flex-start",gap:10,padding:"10px 12px",background:"#fef9ee",borderRadius:8,border:"1px solid #f5c542",flexWrap:"wrap"}}>
-                <div style={{width:36,height:36,background:"#e67e22",borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontSize:13,fontWeight:700,flexShrink:0,marginTop:2}}>{u.name.split(" ").map(n=>n[0]).join("").slice(0,2).toUpperCase()}</div>
-                <div style={{flex:1,minWidth:140}}>
-                  <div style={{fontWeight:700,fontSize:13,color:"#0b1f3a"}}>{u.name}</div>
-                  <div style={{fontSize:11,color:"#888"}}>{u.email} · {u.category==="pastor"?u.rank:u.jobTitle||roleDisplay(u.role)}</div>
-                  <span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:10,marginTop:3,display:"inline-block",background:u.category==="pastor"?"#f5eefb":"#eaf4fb",color:u.category==="pastor"?"#8e44ad":"#2980b9"}}>{u.category==="pastor"?"⛪ Pastor":"🏢 Office Staff"}</span>
-                </div>
-                <div style={{display:"flex",gap:8,flexShrink:0,flexWrap:"wrap",alignItems:"center"}}>
-                  <button className="btn btn-gold" style={{padding:"6px 16px",fontSize:12}} onClick={()=>{
-                    upd(u.id,{approved:true});
-                    toast("✅ Account approved. "+u.name+" can now sign in.");
-                  }}>✅ Approve</button>
-                  <button className="btn btn-outline" style={{padding:"6px 12px",fontSize:12}} onClick={()=>setSel(u)}>View Profile</button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+
       {retiringSoon.length>0&&(
         <div className="alert-banner" style={{borderRadius:10,marginBottom:16}}>
           ⚠️ {retiringSoon.length} staff member{retiringSoon.length>1?"s":""} retiring within 5 years — check profiles
