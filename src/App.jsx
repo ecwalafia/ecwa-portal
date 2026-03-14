@@ -964,7 +964,7 @@ function DocQR({ doc, type }) {
 function FinancePrintForm({ req, onClose }) {
   return(
     <div className="overlay" style={{padding:0,alignItems:"flex-start",overflowY:"auto"}}>
-      <div className="modal" style={{background:"#fff",width:"100%",maxWidth:720,margin:"20px auto",borderRadius:16,boxShadow:"0 24px 60px rgba(11,31,58,0.3)",overflow:"hidden"}}>
+      <div className="modal" style={{background:"#fff",width:"100%",maxWidth:720,margin:"20px auto",borderRadius:16,boxShadow:"0 24px 60px rgba(11,31,58,0.3)"}}>
         <div style={{background:"#0b1f3a",padding:"14px 24px",display:"flex",justifyContent:"space-between",alignItems:"center"}} className="no-print">
           <span style={{fontFamily:"Georgia,serif",color:"#c9a84c",fontSize:16}}>Approved Finance Request</span>
           <div style={{display:"flex",gap:10}}>
