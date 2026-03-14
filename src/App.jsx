@@ -79,7 +79,8 @@ const GlobalStyles = () => (
       body{margin:0;padding:0;font-size:11px;}
       .overlay{position:static!important;background:none!important;padding:0!important;}
       .modal{box-shadow:none!important;border-radius:0!important;max-width:100%!important;width:100%!important;max-height:none!important;overflow:visible!important;}
-      header,.mobile-tabs,.no-print{display:none!important;}
+      header,.mobile-tabs{display:none!important;}
+      button{display:none!important;}
       img[alt="sig"]{height:30px!important;max-width:110px!important;}
       @page{margin:10mm;size:A4;}
     }
@@ -962,8 +963,8 @@ function DocQR({ doc, type }) {
 // ── Finance Print Form ────────────────────────────────────────────────────────
 function FinancePrintForm({ req, onClose }) {
   return(
-    <div className="overlay" style={{padding:0,alignItems:"flex-start"}}>
-      <div className="modal" style={{background:"#fff",width:"100%",maxWidth:720,margin:"20px auto",borderRadius:16,boxShadow:"0 24px 60px rgba(11,31,58,0.3)"}}>
+    <div className="overlay" style={{padding:0,alignItems:"flex-start",overflowY:"auto"}}>
+      <div className="modal" style={{background:"#fff",width:"100%",maxWidth:720,margin:"20px auto",borderRadius:16,boxShadow:"0 24px 60px rgba(11,31,58,0.3)",overflow:"hidden"}}>
         <div style={{background:"#0b1f3a",padding:"14px 24px",display:"flex",justifyContent:"space-between",alignItems:"center"}} className="no-print">
           <span style={{fontFamily:"Georgia,serif",color:"#c9a84c",fontSize:16}}>Approved Finance Request</span>
           <div style={{display:"flex",gap:10}}>
@@ -5525,27 +5526,25 @@ Click OK to download an Excel archive first, or Cancel to trim without saving.`)
 // ── Isolated print helper — only prints the target element, nothing else ──────
 function printElement(elementId) {
   const el = document.getElementById(elementId);
-  if(!el) return;
-  // Convert QR canvases to <img> so they print correctly
-  const replaced = [];
-  el.querySelectorAll("canvas").forEach(canvas => {
-    try {
-      const img = document.createElement("img");
-      img.src = canvas.toDataURL("image/png");
-      img.width = canvas.offsetWidth || canvas.width;
-      img.height = canvas.offsetHeight || canvas.height;
-      canvas.parentNode.insertBefore(img, canvas);
-      canvas.style.display = "none";
-      replaced.push({ canvas, img });
-    } catch(e) {}
-  });
-  // The existing @media print CSS already handles overlay/modal layout correctly
-  window.print();
-  // Restore canvases
-  replaced.forEach(({ canvas, img }) => {
-    canvas.style.display = "";
-    if(img.parentNode) img.parentNode.removeChild(img);
-  });
+  if(!el) { window.print(); return; }
+  const html = el.innerHTML;
+  const logoSrc = document.querySelector('img[alt="ECWA"]')?.src || "";
+  const win = window.open("","_blank","width=800,height=900");
+  win.document.write(`<!DOCTYPE html><html><head><title>ECWA Lafia DCC</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0;}
+    body{font-family:'Segoe UI',sans-serif;font-size:13px;color:#222;padding:20px;}
+    table{width:100%;border-collapse:collapse;}
+    td{padding:7px 12px;border-bottom:1px solid #e8e4dc;}
+    img{max-width:100%;height:auto;}
+    .no-print{display:none!important;}
+    @media print{
+      body{padding:0;}
+      @page{margin:12mm;}
+    }
+  </style></head><body>${html}</body></html>`);
+  win.document.close();
+  setTimeout(()=>{win.focus();win.print();},400);
 }
 
 // ── Password hashing (SHA-256 via Web Crypto API — no library needed) ─────────
