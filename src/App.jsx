@@ -758,13 +758,13 @@ function ReqDetail({ req, user, users, onClose, onAction }) {
 
   const [note,setNote]=useState("");
   const [showPrint,setShowPrint]=useState(false);
-  if(showPrint) return <FinancePrintForm req={req} onClose={()=>setShowPrint(false)}/>;
   const isApprover = user.isMaster ? req.status!=="approved"&&req.status!=="rejected"
     : ["secretary","ads","conf_secretary"].includes(user.role) ? req.status==="pending_secretary"
     : user.role==="accountant" ? req.status==="pending_finance"
     : user.role==="auditor" ? req.status==="pending_auditor"
     : ["chairman","vice_chairman"].includes(user.role) ? req.status==="pending_chairman" : false;
-  const sc=FIN_STATUS[req.status]||{label:req.status,color:"#888",bg:"#f4f4f4"};
+  const sc=FIN_STATUS[req.status];
+  if(showPrint) return <FinancePrintForm req={req} onClose={()=>setShowPrint(false)}/>;
   return(
     <>
       <div className="overlay">
@@ -962,8 +962,8 @@ function DocQR({ doc, type }) {
 // ── Finance Print Form ────────────────────────────────────────────────────────
 function FinancePrintForm({ req, onClose }) {
   return(
-    <div className="overlay" style={{padding:0,alignItems:"flex-start",overflowY:"auto"}}>
-      <div className="modal" style={{background:"#fff",width:"100%",maxWidth:720,margin:"20px auto",borderRadius:16,boxShadow:"0 24px 60px rgba(11,31,58,0.3)",overflow:"hidden"}}>
+    <div className="overlay" style={{padding:0,alignItems:"flex-start"}}>
+      <div className="modal" style={{background:"#fff",width:"100%",maxWidth:720,margin:"20px auto",borderRadius:16,boxShadow:"0 24px 60px rgba(11,31,58,0.3)"}}>
         <div style={{background:"#0b1f3a",padding:"14px 24px",display:"flex",justifyContent:"space-between",alignItems:"center"}} className="no-print">
           <span style={{fontFamily:"Georgia,serif",color:"#c9a84c",fontSize:16}}>Approved Finance Request</span>
           <div style={{display:"flex",gap:10}}>
