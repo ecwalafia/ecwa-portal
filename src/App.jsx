@@ -77,17 +77,11 @@ const GlobalStyles = () => (
       .no-print{display:none!important;}
       .print-only{display:block!important;}
       body{margin:0;padding:0;font-size:11px;}
-      .overlay{position:static!important;background:none!important;padding:0!important;overflow:visible!important;}
+      .overlay{position:static!important;background:none!important;padding:0!important;}
       .modal{box-shadow:none!important;border-radius:0!important;max-width:100%!important;width:100%!important;max-height:none!important;overflow:visible!important;}
-      header,.mobile-tabs{display:none!important;}
-      button{display:none!important;}
+      header,.mobile-tabs,.no-print{display:none!important;}
       img[alt="sig"]{height:30px!important;max-width:110px!important;}
       @page{margin:10mm;size:A4;}
-      /* Scoped print: hide everything except the element being printed */
-      body.printing-element > *:not(.print-root){display:none!important;}
-      body.printing-element .print-root{display:block!important;}
-      body.printing-element .print-root .overlay{position:static!important;display:block!important;background:none!important;padding:0!important;overflow:visible!important;}
-      body.printing-element .print-root .modal{display:block!important;box-shadow:none!important;border-radius:0!important;max-width:100%!important;width:100%!important;max-height:none!important;overflow:visible!important;}
     }
     .print-only{display:none;}
     .header-mobile{display:none;}
@@ -764,13 +758,13 @@ function ReqDetail({ req, user, users, onClose, onAction }) {
 
   const [note,setNote]=useState("");
   const [showPrint,setShowPrint]=useState(false);
+  if(showPrint) return <FinancePrintForm req={req} onClose={()=>setShowPrint(false)}/>;
   const isApprover = user.isMaster ? req.status!=="approved"&&req.status!=="rejected"
     : ["secretary","ads","conf_secretary"].includes(user.role) ? req.status==="pending_secretary"
     : user.role==="accountant" ? req.status==="pending_finance"
     : user.role==="auditor" ? req.status==="pending_auditor"
     : ["chairman","vice_chairman"].includes(user.role) ? req.status==="pending_chairman" : false;
-  const sc=FIN_STATUS[req.status];
-  if(showPrint) return <FinancePrintForm req={req} onClose={()=>setShowPrint(false)}/>;
+  const sc=FIN_STATUS[req.status]||{label:req.status,color:"#888",bg:"#f4f4f4"};
   return(
     <>
       <div className="overlay">
@@ -968,8 +962,7 @@ function DocQR({ doc, type }) {
 // ── Finance Print Form ────────────────────────────────────────────────────────
 function FinancePrintForm({ req, onClose }) {
   return(
-    <div className="print-root">
-    <div className="overlay" style={{padding:0,alignItems:"flex-start"}}>
+    <div className="overlay" style={{padding:0,alignItems:"flex-start",overflowY:"auto"}}>
       <div className="modal" style={{background:"#fff",width:"100%",maxWidth:720,margin:"20px auto",borderRadius:16,boxShadow:"0 24px 60px rgba(11,31,58,0.3)",overflow:"hidden"}}>
         <div style={{background:"#0b1f3a",padding:"14px 24px",display:"flex",justifyContent:"space-between",alignItems:"center"}} className="no-print">
           <span style={{fontFamily:"Georgia,serif",color:"#c9a84c",fontSize:16}}>Approved Finance Request</span>
@@ -1078,7 +1071,6 @@ function FinancePrintForm({ req, onClose }) {
           </div>
         </div>
       </div>
-    </div>
     </div>
   );
 }
@@ -5547,27 +5539,8 @@ function printElement(elementId) {
       replaced.push({ canvas, img });
     } catch(e) {}
   });
-  // Find the closest print-root ancestor (already set on FinancePrintForm/LeaveLetter),
-  // or walk up to the nearest overlay/modal, and scope the print to it only.
-  const printRoot = el.closest(".print-root") || el.closest(".overlay") || el.closest(".modal") || el;
-  let wrappedHere = false;
-  if(!printRoot.classList.contains("print-root")) {
-    // Not already wrapped — wrap it now
-    const wrapper = document.createElement("div");
-    wrapper.className = "print-root";
-    printRoot.parentNode.insertBefore(wrapper, printRoot);
-    wrapper.appendChild(printRoot);
-    wrappedHere = true;
-  }
-  document.body.classList.add("printing-element");
+  // The existing @media print CSS already handles overlay/modal layout correctly
   window.print();
-  document.body.classList.remove("printing-element");
-  // Restore DOM if we added a wrapper
-  if(wrappedHere) {
-    const wrapper = printRoot.parentNode;
-    wrapper.parentNode.insertBefore(printRoot, wrapper);
-    wrapper.parentNode.removeChild(wrapper);
-  }
   // Restore canvases
   replaced.forEach(({ canvas, img }) => {
     canvas.style.display = "";
