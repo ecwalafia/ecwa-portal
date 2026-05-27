@@ -937,46 +937,41 @@ function StaffQR({ staff }) {
 }
 
 function DocQR({ doc, type }) {
-  // type: "leave" | "fund"
+  // QR codes have a hard character limit — keep data short and essential only
+  // The old version included full comments and long approval chains, causing "code length overflow"
   let lines = [];
   if(type==="leave"){
     const appr = (doc.approvals||[]);
     lines = [
-      "ECWA LAFIA DCC - DOCUMENT VERIFICATION",
-      "Document: Leave Approval Letter",
+      "ECWA LAFIA DCC - LEAVE APPROVAL",
       "Ref: " + (doc.refNo||doc.id),
       "Staff: " + doc.requester,
-      "Leave Type: " + doc.type + " - " + doc.days + " Day(s)",
+      "Type: " + doc.type + " (" + doc.days + " days)",
       "Dates: " + fdate(doc.startDate) + " to " + fdate(doc.endDate),
-      "",
-      "APPROVAL CHAIN:",
-      ...appr.map((a,i)=>`${i+1}. ${a.position} - ${a.name}\n   Approved: ${fdate(a.date)}${a.note ? "\n   Comment: "+a.note : ""}`),
-      "",
-      "Final Status: APPROVED",
-      "Generated: " + fdate(today()),
-      "Powered by Kriz-Technologies",
+      "Approvers: " + appr.map(a=>a.name).join(", "),
+      "Status: APPROVED",
+      "Date: " + fdate(today()),
+      "Kriz-Technologies",
     ];
   } else {
     const steps = ["secretary","accountant","auditor","chairman","vice_chairman"];
-    const chain = steps.filter(k=>doc.signatures?.[k]).map((k,i)=>{
-      const label = {secretary:"Secretary",accountant:"Finance",auditor:"Auditor",chairman:"Chairman",vice_chairman:"Vice Chairman"}[k]||k;
-      return `${i+1}. ${label} - ${doc.signatures[k]}${doc.comments?.[k] ? "\n   Comment: "+doc.comments[k] : ""}`;
+    const approvers = steps.filter(k=>doc.signatures?.[k]).map(k=>{
+      return {secretary:"Secretary",accountant:"Finance",auditor:"Auditor",chairman:"Chairman",vice_chairman:"V.Chairman"}[k]||k;
     });
+    // Truncate purpose to 60 chars to avoid QR overflow
+    const shortPurpose = (doc.purpose||"—").length > 60
+      ? (doc.purpose||"—").slice(0,57)+"..."
+      : (doc.purpose||"—");
     lines = [
-      "ECWA LAFIA DCC - DOCUMENT VERIFICATION",
-      "Document: Fund Request Approval",
+      "ECWA LAFIA DCC - FUND REQUEST",
       "Ref: " + doc.id,
-      "Requested by: " + doc.requester,
-      "Department: " + (doc.requesterRole||"—"),
+      "By: " + doc.requester,
       "Amount: " + money(doc.amount),
-      "Purpose: " + (doc.purpose||"—"),
-      "",
-      "APPROVAL CHAIN:",
-      ...chain,
-      "",
-      "Final Status: APPROVED",
-      "Generated: " + fdate(today()),
-      "Powered by Kriz-Technologies",
+      "Purpose: " + shortPurpose,
+      "Approvers: " + approvers.join(", "),
+      "Status: APPROVED",
+      "Date: " + fdate(today()),
+      "Kriz-Technologies",
     ];
   }
   return <QRCodeImg text={lines.filter(Boolean).join("\n")} size={80}/>;
@@ -1149,7 +1144,7 @@ function FinanceMod({ user, users, requests, setRequests, toast, openRecordId, o
   const add=()=>{
     const validItems=items.filter(i=>i.desc.trim()&&parseFloat(i.unitCost)>0);
     if(validItems.length===0||!reqDate){toast("Please add at least one item with description and cost.","danger");return;}
-    const id="REQ-"+String(requests.length+1).padStart(3,"0");
+    const id="REQ-"+Date.now();
     const purposeText=validItems.map((i,n)=>`${n+1}. ${i.desc} (x${i.qty}) = ${money(itemTotal(i))}`).join("\n");
     const buildRecord=(attachment)=>{
       setRequests(r=>[...r,{
@@ -1499,14 +1494,14 @@ function LeaveLetter({ leave, users, onClose }) {
             {staff?.category==="pastor"?<>{staff.rank} · {staff.lc_ph}<br/>{staff.lcc} LCC</>:<>{roleDisplay(staff?.role||leave.requester_role)}<br/>{DEPARTMENTS.find(d=>d.id===staff?.dept)?.label||""} Department</>}
           </div>
           <div style={{marginBottom:20,fontSize:13,lineHeight:1.8}}>
-            <strong>Dear {staff?.name?.split(" ")[0]||leave.requester},</strong><br/>
+            <strong>Dear {(()=>{const TITLES=["Rev.","Revd.","Pastor","Dr.","Mr.","Mrs.","Ms.","Prof.","Elder","Deacon","Deaconess"];const parts=(staff?.name||leave.requester).split(" ");const first=parts.find(p=>!TITLES.includes(p));return first||parts[0];})()},</strong><br/>
             Your application for leave has been reviewed and approved. Please find below the details of your approved leave:
           </div>
           {/* Details table */}
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:11,marginBottom:6}}>
             {[
               ["Staff Name", staff?.name||leave.requester],
-              ["Staff ID", staff?`ECWA-${String(staff.id).padStart(4,"0")}`:"—"],
+              ["Staff ID", staff?(staff.id!=null?`ECWA-${String(staff.id).padStart(4,"0")}`:"ECWA-????"):"—"],
               ["Grade Level", staff?.gradePending?"Pending":staff?.gradeLevel||"—"],
               ["Date of Birth", staff?.dob?fdate(staff.dob):"—"],
               ["Date of Employment", staff?.doj?fdate(staff.doj):"—"],
@@ -1588,11 +1583,11 @@ function LeaveMod({ user, users, leaves, setLeaves, toast, openRecordId, onRecor
   }).length;
 
   const addLeave=async (f)=>{
-    const id="LV-"+String(leaves.length+1).padStart(3,"0");
+    const id="LV-"+Date.now();
     const days=Math.max(1,Math.round((new Date(f.endDate)-new Date(f.startDate))/(1000*60*60*24))+1);
     const deptForUser = user.category==="office"?user.dept:null;
     const newLeave = {
-      id, refNo:`LV-${new Date().getFullYear()}-${String(leaves.length+1).padStart(3,"0")}`,
+      id, refNo:`LV-${new Date().getFullYear()}-${id.split("-")[1]}`,
       requester:user.name, requesterEmail:user.email, requester_role:user.role,
       lcc:user.lcc||null, lc_ph:user.lc_ph||null, rank:user.rank||null,
       dept:deptForUser, type:f.type, startDate:f.startDate, endDate:f.endDate,
@@ -1773,7 +1768,7 @@ function SundayMod({ user, users, sundayReports, setSundayReports, toast }) {
   };
 
   const submitReport=(f)=>{
-    const id="SR-"+String(sundayReports.length+1).padStart(3,"0");
+    const id="SR-"+Date.now();
     setSundayReports(r=>[...r,{...f,id,pastorId:user.id,pastorName:user.name,pastorEmail:user.email,lcc:user.lcc,lc_ph:user.lc_ph,submitted:true,appeal:null}]);
     toast("✅ Sunday report submitted.");setForm(false);
   };
@@ -3661,9 +3656,11 @@ function SignIn({ users, setUsers, onLogin, onGo, pwdReqs, setPwdReqs }) {
 function MasterPanel({ user, users, setUsers, requests, setRequests, leaves, setLeaves,
   sundayReports, setSundayReports, announcements, setAnnouncements, lccs, setLccs,
   attendance, setAttendance, banner, setBanner, maintMode, setMaintMode, maintMsg, setMaintMsg,
-  pwdReqs, setPwdReqs, customRoles, setCustomRoles, customDepts, setCustomDepts, toast, onLogout }) {
+  pwdReqs, setPwdReqs, customRoles, setCustomRoles, customDepts, setCustomDepts, onLogout }) {
 
   const [section, setSection] = useState("dashboard");
+  const [tk, setTk] = useState(null);
+  const toast = (m, t="success") => { setTk({m,t}); setTimeout(()=>setTk(null), 4000); };
   const [auditLog, setAuditLog] = useState(() => {
     try { return JSON.parse(localStorage.getItem("ecwa_audit") || "[]"); } catch { return []; }
   });
@@ -3693,6 +3690,7 @@ function MasterPanel({ user, users, setUsers, requests, setRequests, leaves, set
 
   return (
     <div style={{minHeight:"100vh",background:"#0a0a0a",color:"#fff"}}>
+      {tk&&<Toasty msg={tk.m} type={tk.t}/>}
       {/* Header */}
       <div style={{background:"linear-gradient(135deg,#0b1f3a,#1a3a5c)",padding:"12px 20px",display:"flex",alignItems:"center",justifyContent:"space-between",borderBottom:"2px solid #c9a84c"}}>
         <div style={{display:"flex",alignItems:"center",gap:12}}>
@@ -5732,7 +5730,7 @@ export default function App() {
         <p style={{fontSize:12,color:"rgba(255,255,255,0.3)",marginTop:24}}>Lafia Portal</p>
       </div>
     ):me.isMaster?(
-      <MasterPanel user={me} users={users} setUsers={setUsers} requests={requests} setRequests={setReqs} leaves={leaves} setLeaves={setLeaves} sundayReports={sundayReports} setSundayReports={setSundayReports} attendance={attendance} setAttendance={setAttendance} announcements={announcements} setAnnouncements={setAnnouncements} lccs={lccs} setLccs={setLccs} pwdReqs={pwdReqs} setPwdReqs={setPwdReqs} customRoles={customRoles} setCustomRoles={setCustomRoles} customDepts={customDepts} setCustomDepts={setCustomDepts} banner={banner} setBanner={setBanner} maintMode={maintMode} setMaintMode={setMaintMode} maintMsg={maintMsg} setMaintMsg={setMaintMsg} toast={(m)=>{}} onLogout={()=>setMe(null)}/>
+      <MasterPanel user={me} users={users} setUsers={setUsers} requests={requests} setRequests={setReqs} leaves={leaves} setLeaves={setLeaves} sundayReports={sundayReports} setSundayReports={setSundayReports} attendance={attendance} setAttendance={setAttendance} announcements={announcements} setAnnouncements={setAnnouncements} lccs={lccs} setLccs={setLccs} pwdReqs={pwdReqs} setPwdReqs={setPwdReqs} customRoles={customRoles} setCustomRoles={setCustomRoles} customDepts={customDepts} setCustomDepts={setCustomDepts} banner={banner} setBanner={setBanner} maintMode={maintMode} setMaintMode={setMaintMode} maintMsg={maintMsg} setMaintMsg={setMaintMsg} onLogout={()=>setMe(null)}/>
     ):(
       <Dashboard user={me} users={users} setUsers={setUsers} requests={requests} setRequests={setReqs} leaves={leaves} setLeaves={setLeaves} sundayReports={sundayReports} setSundayReports={setSundayReports} attendance={attendance} setAttendance={setAttendance} announcements={announcements} setAnnouncements={setAnnouncements} pwdReqs={pwdReqs} setPwdReqs={setPwdReqs} lccs={lccs} setLccs={setLccs} onLogout={()=>setMe(null)}/>
     )}

@@ -1,8 +1,21 @@
-import { render, screen } from '@testing-library/react';
-import App from './App';
+import { render, screen } from "@testing-library/react";
+import App from "./App";
 
-test('renders learn react link', () => {
+jest.mock("./lib/supabase", () => ({
+  supabase: {
+    from: () => ({
+      select: () => Promise.resolve({ data: [], error: null }),
+    }),
+  },
+}));
+
+jest.mock("./lib/email", () => ({
+  sendGenericEmail: jest.fn(() => Promise.resolve({ skipped: true })),
+}));
+
+test("renders the ECWA portal sign-in screen", async () => {
   render(<App />);
-  const linkElement = screen.getByText(/learn react/i);
-  expect(linkElement).toBeInTheDocument();
+
+  expect(await screen.findByText("Welcome Back", {}, { timeout: 10000 })).toBeInTheDocument();
+  expect(screen.getByText("Sign in to your Lafia Portal account")).toBeInTheDocument();
 });
