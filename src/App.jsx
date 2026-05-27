@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { createClient } from "@supabase/supabase-js";
 
 // ── Supabase Client ────────────────────────────────────────────────────────────
@@ -755,6 +755,28 @@ function CropModal({ file, onSave, onClose }) {
 }
 
 
+// ── Error Boundary — catches crashes in modals without blanking the whole portal ─
+class ErrorBoundary extends React.Component {
+  constructor(props){super(props);this.state={crashed:false,msg:""};}
+  static getDerivedStateFromError(e){return{crashed:true,msg:e?.message||"Unknown error"};}
+  componentDidCatch(e,info){console.error("Portal caught error:",e,info);}
+  render(){
+    if(this.state.crashed){
+      return(
+        <div className="overlay">
+          <div className="modal" style={{maxWidth:440,padding:32,textAlign:"center"}}>
+            <div style={{fontSize:40,marginBottom:16}}>⚠️</div>
+            <div style={{fontFamily:"Georgia,serif",fontSize:18,color:"#0b1f3a",marginBottom:8}}>Something went wrong</div>
+            <div style={{fontSize:13,color:"#888",marginBottom:24,lineHeight:1.6}}>{this.state.msg}</div>
+            <button className="btn btn-gold" onClick={()=>{this.setState({crashed:false,msg:""});if(this.props.onClose)this.props.onClose();}}>Close & Try Again</button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 function ReqDetail({ req, user, users, onClose, onAction }) {
 
   const [note,setNote]=useState("");
@@ -816,7 +838,7 @@ function ReqDetail({ req, user, users, onClose, onAction }) {
                   </div>
                   <div style={{fontSize:10,color:"#888"}}>{req.attachment.size}</div>
                 </div>
-                <a href={req.attachment.data} download={req.attachment.name} className="btn btn-outline btn-sm" style={{flexShrink:0}}>⬇ Download</a>
+                <button className="btn btn-outline btn-sm" style={{flexShrink:0}} onClick={()=>{try{const a=document.createElement("a");a.href=req.attachment.data;a.download=req.attachment.name;document.body.appendChild(a);a.click();document.body.removeChild(a);}catch(e){alert("Download failed. The file may be too large or corrupted.");}}}>⬇ Download</button>
               </div>
             )}
             {/* Approval Progress */}
@@ -1134,7 +1156,7 @@ function FinanceMod({ user, users, requests, setRequests, toast, openRecordId, o
         id, requester:user.name, requesterRole:roleDisplay(user.role), requesterEmail:user.email,
         date:reqDate, purpose:reqNote.trim()||"See items below",
         items:validItems, amount:grandTotal,
-        amountWords:nairaToWords(grandTotal),
+        amountWords:numberToWords(grandTotal),
         status:"pending_secretary", signatures:{}, comments:{},
         attachment,
       }]);
@@ -1280,7 +1302,7 @@ function FinanceMod({ user, users, requests, setRequests, toast, openRecordId, o
                     <div style={{fontFamily:"Georgia,serif",fontSize:18,fontWeight:700,color:"#c9a84c"}}>{money(grandTotal)}</div>
                   </div>
                 )}
-                {grandTotal>0&&<div style={{marginTop:6,fontSize:11,color:"#888",fontStyle:"italic"}}>In words: {nairaToWords(grandTotal)}</div>}
+                {grandTotal>0&&<div style={{marginTop:6,fontSize:11,color:"#888",fontStyle:"italic"}}>In words: {numberToWords(grandTotal)}</div>}
               </div>
 
               {/* Attachment */}
@@ -1306,7 +1328,7 @@ function FinanceMod({ user, users, requests, setRequests, toast, openRecordId, o
           </div>
         </div>
       )}
-      {sel&&<ReqDetail req={sel} user={user} users={users} onClose={()=>setSel(null)} onAction={act}/>}
+      {sel&&<ErrorBoundary onClose={()=>setSel(null)}><ReqDetail req={sel} user={user} users={users} onClose={()=>setSel(null)} onAction={act}/></ErrorBoundary>}
     </div>
   );
 }
@@ -1681,7 +1703,7 @@ function LeaveMod({ user, users, leaves, setLeaves, toast, openRecordId, onRecor
         })}
       </div>
       {form&&<LeaveForm user={user} onSubmit={addLeave} onClose={()=>setForm(false)}/>}
-      {sel&&<LeaveDetail leave={sel} user={user} users={users} onClose={()=>setSel(null)} onAct={act}/>}
+      {sel&&<ErrorBoundary onClose={()=>setSel(null)}><LeaveDetail leave={sel} user={user} users={users} onClose={()=>setSel(null)} onAct={act}/></ErrorBoundary>}
     </div>
   );
 }
@@ -5527,9 +5549,25 @@ Click OK to download an Excel archive first, or Cancel to trim without saving.`)
 function printElement(elementId) {
   const el = document.getElementById(elementId);
   if(!el) { window.print(); return; }
-  const html = el.innerHTML;
-  const logoSrc = document.querySelector('img[alt="ECWA"]')?.src || "";
+
+  // Clone the element so we can safely strip large base64 images
+  // Base64 images in print windows cause Chrome's PDF renderer to hang
+  const clone = el.cloneNode(true);
+  clone.querySelectorAll("img").forEach(img => {
+    const src = img.getAttribute("src") || "";
+    // If it's a base64 data URI (not a real URL), replace with a placeholder
+    if(src.startsWith("data:")) {
+      const placeholder = document.createElement("div");
+      placeholder.style.cssText = "width:100%;height:100%;background:#f0ede8;display:flex;align-items:center;justify-content:center;font-size:10px;color:#aaa;border:1px solid #ddd;border-radius:4px;";
+      placeholder.textContent = "[Photo]";
+      img.replaceWith(placeholder);
+    }
+  });
+
+  const html = clone.innerHTML;
   const win = window.open("","_blank","width=800,height=900");
+  if(!win) { alert("Please allow popups for this site to print."); return; }
+
   win.document.write(`<!DOCTYPE html><html><head><title>ECWA Lafia DCC</title>
   <style>
     *{box-sizing:border-box;margin:0;padding:0;}
@@ -5544,7 +5582,11 @@ function printElement(elementId) {
     }
   </style></head><body>${html}</body></html>`);
   win.document.close();
-  setTimeout(()=>{win.focus();win.print();},400);
+
+  // Use onload instead of a blind setTimeout — fires when the page is truly ready
+  win.onload = () => { win.focus(); win.print(); };
+  // Fallback in case onload already fired (some browsers)
+  if(win.document.readyState === "complete") { win.focus(); win.print(); }
 }
 
 // ── Password hashing (SHA-256 via Web Crypto API — no library needed) ─────────
