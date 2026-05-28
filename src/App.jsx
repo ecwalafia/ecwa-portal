@@ -762,6 +762,27 @@ class ErrorBoundary extends React.Component {
   componentDidCatch(e,info){console.error("Portal caught error:",e,info);}
   render(){
     if(this.state.crashed){
+      // Full-screen crash page when used as root wrapper (no onClose prop)
+      if(!this.props.onClose){
+        return(
+          <div style={{minHeight:"100vh",background:"linear-gradient(135deg,#0b1f3a,#1a3a5c)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",color:"#fff",textAlign:"center",padding:32}}>
+            <div style={{fontSize:64,marginBottom:16}}>⚠️</div>
+            <h2 style={{fontFamily:"Georgia,serif",color:"#c9a84c",fontSize:22,marginBottom:12}}>Something went wrong</h2>
+            <p style={{color:"rgba(255,255,255,0.6)",fontSize:14,maxWidth:400,lineHeight:1.8,marginBottom:8}}>
+              The portal hit an unexpected error. Your data is safe — please refresh to continue.
+            </p>
+            <p style={{color:"rgba(255,255,255,0.3)",fontSize:12,marginBottom:24}}>{this.state.msg}</p>
+            <button onClick={()=>window.location.reload()}
+              style={{background:"#c9a84c",color:"#0b1f3a",border:"none",borderRadius:8,padding:"12px 28px",fontSize:14,fontWeight:700,cursor:"pointer"}}>
+              🔄 Refresh Page
+            </button>
+            <p style={{color:"rgba(255,255,255,0.25)",fontSize:11,marginTop:24}}>
+              If this keeps happening, contact Kriz-Technologies · 08166646683
+            </p>
+          </div>
+        );
+      }
+      // Modal-style error for component-level crashes (has onClose prop)
       return(
         <div className="overlay">
           <div className="modal" style={{maxWidth:440,padding:32,textAlign:"center"}}>
@@ -5614,32 +5635,6 @@ async function checkPassword(plain, hashed) {
   return plain === hashed; // fallback for demo accounts
 }
 
-// ── Error Boundary ─────────────────────────────────────────────────────────────
-class ErrorBoundary extends React.Component {
-  constructor(props) { super(props); this.state = { crashed: false }; }
-  static getDerivedStateFromError() { return { crashed: true }; }
-  componentDidCatch(error, info) { console.error("App crashed:", error, info); }
-  render() {
-    if (this.state.crashed) return (
-      <div style={{minHeight:"100vh",background:"linear-gradient(135deg,#0b1f3a,#1a3a5c)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",color:"#fff",textAlign:"center",padding:32}}>
-        <div style={{fontSize:64,marginBottom:16}}>⚠️</div>
-        <h2 style={{fontFamily:"Georgia,serif",color:"#c9a84c",fontSize:22,marginBottom:12}}>Something went wrong</h2>
-        <p style={{color:"rgba(255,255,255,0.6)",fontSize:14,maxWidth:400,lineHeight:1.8,marginBottom:24}}>
-          The portal hit an unexpected error. Your data is safe — please refresh to continue.
-        </p>
-        <button onClick={()=>window.location.reload()}
-          style={{background:"#c9a84c",color:"#0b1f3a",border:"none",borderRadius:8,padding:"12px 28px",fontSize:14,fontWeight:700,cursor:"pointer"}}>
-          🔄 Refresh Page
-        </button>
-        <p style={{color:"rgba(255,255,255,0.25)",fontSize:11,marginTop:24}}>
-          If this keeps happening, contact Kriz-Technologies · 08166646683
-        </p>
-      </div>
-    );
-    return this.props.children;
-  }
-}
-
 // ── Root ───────────────────────────────────────────────────────────────────────
 export default function App() {
   const [loading,setLoading] = useState(true);
@@ -5743,18 +5738,7 @@ export default function App() {
   useEffect(() => { if(maintReady)   sbSave("maintMode", maintMode); }, [maintMode, maintReady]);
   useEffect(() => { if(maintReady)   sbSave("maintMsg",  maintMsg);  }, [maintMsg,  maintReady]);
 
-  // ── Loading screen ─────────────────────────────────────────────────────────
-  if(loading) return(
-    <div style={{minHeight:"100vh",background:"linear-gradient(135deg,#0b1f3a,#1a3a5c)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:16}}>
-      <img src={LOGO} alt="ECWA" style={{width:72,height:72,borderRadius:"50%",border:"2px solid #c9a84c"}}/>
-      <div style={{color:"#c9a84c",fontFamily:"Georgia,serif",fontSize:18}}>ECWA Lafia DCC</div>
-      <div style={{color:"rgba(255,255,255,0.4)",fontSize:13}}>Loading portal data…</div>
-      <div style={{width:40,height:40,border:"3px solid rgba(201,168,76,0.2)",borderTop:"3px solid #c9a84c",borderRadius:"50%",animation:"spin 1s linear infinite"}}/>
-      <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
-    </div>
-  );
-
-  // ── Saving indicator state ────────────────────────────────────────────────────
+  // ── Saving indicator state (must be before any conditional return) ───────────
   const [savingDot, setSavingDot] = useState(null); // null | "saving" | "saved"
   useEffect(() => {
     const id = setInterval(() => {
@@ -5766,6 +5750,17 @@ export default function App() {
     }, 500);
     return () => clearInterval(id);
   }, []);
+
+  // ── Loading screen ─────────────────────────────────────────────────────────
+  if(loading) return(
+    <div style={{minHeight:"100vh",background:"linear-gradient(135deg,#0b1f3a,#1a3a5c)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:16}}>
+      <img src={LOGO} alt="ECWA" style={{width:72,height:72,borderRadius:"50%",border:"2px solid #c9a84c"}}/>
+      <div style={{color:"#c9a84c",fontFamily:"Georgia,serif",fontSize:18}}>ECWA Lafia DCC</div>
+      <div style={{color:"rgba(255,255,255,0.4)",fontSize:13}}>Loading portal data…</div>
+      <div style={{width:40,height:40,border:"3px solid rgba(201,168,76,0.2)",borderTop:"3px solid #c9a84c",borderRadius:"50%",animation:"spin 1s linear infinite"}}/>
+      <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+    </div>
+  );
 
   if(me)return(
     <ErrorBoundary>
