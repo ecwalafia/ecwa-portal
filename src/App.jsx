@@ -5614,6 +5614,32 @@ async function checkPassword(plain, hashed) {
   return plain === hashed; // fallback for demo accounts
 }
 
+// ── Error Boundary ─────────────────────────────────────────────────────────────
+class ErrorBoundary extends React.Component {
+  constructor(props) { super(props); this.state = { crashed: false }; }
+  static getDerivedStateFromError() { return { crashed: true }; }
+  componentDidCatch(error, info) { console.error("App crashed:", error, info); }
+  render() {
+    if (this.state.crashed) return (
+      <div style={{minHeight:"100vh",background:"linear-gradient(135deg,#0b1f3a,#1a3a5c)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",color:"#fff",textAlign:"center",padding:32}}>
+        <div style={{fontSize:64,marginBottom:16}}>⚠️</div>
+        <h2 style={{fontFamily:"Georgia,serif",color:"#c9a84c",fontSize:22,marginBottom:12}}>Something went wrong</h2>
+        <p style={{color:"rgba(255,255,255,0.6)",fontSize:14,maxWidth:400,lineHeight:1.8,marginBottom:24}}>
+          The portal hit an unexpected error. Your data is safe — please refresh to continue.
+        </p>
+        <button onClick={()=>window.location.reload()}
+          style={{background:"#c9a84c",color:"#0b1f3a",border:"none",borderRadius:8,padding:"12px 28px",fontSize:14,fontWeight:700,cursor:"pointer"}}>
+          🔄 Refresh Page
+        </button>
+        <p style={{color:"rgba(255,255,255,0.25)",fontSize:11,marginTop:24}}>
+          If this keeps happening, contact Kriz-Technologies · 08166646683
+        </p>
+      </div>
+    );
+    return this.props.children;
+  }
+}
+
 // ── Root ───────────────────────────────────────────────────────────────────────
 export default function App() {
   const [loading,setLoading] = useState(true);
@@ -5728,8 +5754,28 @@ export default function App() {
     </div>
   );
 
+  // ── Saving indicator state ────────────────────────────────────────────────────
+  const [savingDot, setSavingDot] = useState(null); // null | "saving" | "saved"
+  useEffect(() => {
+    const id = setInterval(() => {
+      setSavingDot(prev => {
+        if (_sbSaving) return "saving";
+        if (prev === "saving") { setTimeout(() => setSavingDot(null), 2000); return "saved"; }
+        return prev;
+      });
+    }, 500);
+    return () => clearInterval(id);
+  }, []);
+
   if(me)return(
+    <ErrorBoundary>
     <><GlobalStyles/>
+    {/* Saving indicator */}
+    {savingDot&&(
+      <div style={{position:"fixed",bottom:16,right:16,zIndex:99999,background:savingDot==="saving"?"#0b1f3a":"#1a6b3a",color:savingDot==="saving"?"#c9a84c":"#7dffb3",border:`1px solid ${savingDot==="saving"?"#c9a84c":"#7dffb3"}`,borderRadius:20,padding:"6px 14px",fontSize:12,fontWeight:600,boxShadow:"0 2px 8px rgba(0,0,0,0.3)",transition:"all 0.3s",pointerEvents:"none"}}>
+        {savingDot==="saving"?"💾 Saving…":"✅ Saved"}
+      </div>
+    )}
     {/* Emergency banner — shown to all users */}
     {banner?.active&&!me.isMaster&&(
       <div style={{background:banner.type==="danger"?"#c0392b":banner.type==="warning"?"#e67e22":"#2980b9",color:"#fff",padding:"10px 20px",textAlign:"center",fontSize:13,fontWeight:600,zIndex:9999,position:"relative"}}>
@@ -5750,9 +5796,11 @@ export default function App() {
       <Dashboard user={me} users={users} setUsers={setUsers} requests={requests} setRequests={setReqs} leaves={leaves} setLeaves={setLeaves} sundayReports={sundayReports} setSundayReports={setSundayReports} attendance={attendance} setAttendance={setAttendance} announcements={announcements} setAnnouncements={setAnnouncements} pwdReqs={pwdReqs} setPwdReqs={setPwdReqs} lccs={lccs} setLccs={setLccs} onLogout={()=>setMe(null)}/>
     )}
     </>
+    </ErrorBoundary>
   );
 
   return(
+    <ErrorBoundary>
     <div style={{minHeight:"100vh",background:"linear-gradient(135deg,#0b1f3a 0%,#1a3a5c 60%,#0d2b47 100%)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"16px",position:"relative",overflow:"hidden"}}>
       <GlobalStyles/>
       <div style={{position:"absolute",width:350,height:350,border:"1px solid rgba(201,168,76,0.08)",borderRadius:"50%",top:-80,right:-80}}/>
@@ -5791,5 +5839,6 @@ export default function App() {
         </div>
       </div>
     </div>
+    </ErrorBoundary>
   );
 }
