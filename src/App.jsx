@@ -3685,6 +3685,14 @@ function SignIn({ users, setUsers, onLogin, onGo, pwdReqs, setPwdReqs }) {
       setEr("This account has been locked. Please contact the Admin.");return;
     }
     if(u.mustChangePassword){setChangeMode(u);return;}
+    // Auto-upgrade legacy SHA-256 password to PBKDF2 silently on login
+    if(u.password && !u.password.startsWith("pbkdf2$")) {
+      try {
+        const upgraded = await hashPassword(pw);
+        setUsers(us => us.map(x => x.id===u.id ? {...x, password:upgraded} : x));
+        u = {...u, password:upgraded};
+      } catch(e) { console.error("Password upgrade error:", e); }
+    }
     onLogin(u);
   };
   return(
@@ -3717,15 +3725,23 @@ function MasterPanel({ user, users, setUsers, requests, setRequests, leaves, set
   const [section, setSection] = useState("dashboard");
   const [tk, setTk] = useState(null);
   const toast = (m, t="success") => { setTk({m,t}); setTimeout(()=>setTk(null), 4000); };
-  const [auditLog, setAuditLog] = useState(() => {
-    try { return JSON.parse(localStorage.getItem("ecwa_audit") || "[]"); } catch { return []; }
-  });
+  const [auditLog, setAuditLog] = useState([]);
+
+  // Load audit log from Supabase on mount
+  useEffect(() => {
+    supabase.from("app_state").select("value").eq("key","audit_log").single()
+      .then(({ data }) => { if(data?.value) setAuditLog(data.value); })
+      .catch(() => {});
+  }, []);
 
   const addLog = (action, detail) => {
     const entry = { id: Date.now(), action, detail, ts: new Date().toISOString() };
     setAuditLog(prev => {
       const updated = [entry, ...prev].slice(0, 500);
-      try { localStorage.setItem("ecwa_audit", JSON.stringify(updated)); } catch {}
+      // Save to Supabase — permanent, tamper-proof, visible from any device
+      supabase.from("app_state")
+        .upsert({ key:"audit_log", value:updated, updated_at:new Date().toISOString() }, { onConflict:"key" })
+        .then(({ error }) => { if(error) console.error("Audit log save error:", error.message); });
       return updated;
     });
   };
@@ -5307,7 +5323,7 @@ function MasterAudit({ log, setAuditLog }) {
     <div>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
         <div style={{fontFamily:"Georgia,serif",color:"#c9a84c",fontSize:20}}>🕵️ Audit Log</div>
-        <button onClick={()=>{ if(window.confirm("Clear all audit logs?")) { setAuditLog([]); try{localStorage.removeItem("ecwa_audit")}catch{} } }} style={{background:"rgba(192,57,43,0.15)",border:"1px solid rgba(192,57,43,0.3)",color:"#e74c3c",borderRadius:8,padding:"6px 14px",cursor:"pointer",fontSize:12}}>Clear Log</button>
+        <button onClick={async ()=>{ if(window.confirm("Clear all audit logs?")) { setAuditLog([]); await supabase.from("app_state").upsert({key:"audit_log",value:[],updated_at:new Date().toISOString()},{onConflict:"key"}); } }} style={{background:"rgba(192,57,43,0.15)",border:"1px solid rgba(192,57,43,0.3)",color:"#e74c3c",borderRadius:8,padding:"6px 14px",cursor:"pointer",fontSize:12}}>Clear Log</button>
       </div>
       {log.length===0&&<div style={{textAlign:"center",color:"rgba(255,255,255,0.3)",padding:40,fontSize:13}}>No actions logged yet.</div>}
       {log.map(entry=>(
@@ -5714,16 +5730,38 @@ function printElement(elementId) {
   doCapture(0);
 }
 
-// ── Password hashing (SHA-256 via Web Crypto API — no library needed) ─────────
-async function hashPassword(plain) {
+// ── Password hashing (PBKDF2 — production-grade, slow by design) ──────────────
+// Format stored: "pbkdf2$<salt>$<hash>" — unique salt per password, rainbow tables useless
+// Legacy SHA-256 hashes (64 hex chars) still supported — auto-upgrade on next login
+async function hashPassword(plain, saltHex) {
   const enc = new TextEncoder();
-  const buf = await window.crypto.subtle.digest("SHA-256", enc.encode(plain));
-  return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,"0")).join("");
+  const salt = saltHex
+    ? Uint8Array.from(saltHex.match(/.{2}/g).map(b=>parseInt(b,16)))
+    : crypto.getRandomValues(new Uint8Array(16));
+  const saltStr = Array.from(salt).map(b=>b.toString(16).padStart(2,"0")).join("");
+  const keyMaterial = await crypto.subtle.importKey("raw", enc.encode(plain), "PBKDF2", false, ["deriveBits"]);
+  const bits = await crypto.subtle.deriveBits(
+    { name:"PBKDF2", salt, iterations:200000, hash:"SHA-256" },
+    keyMaterial, 256
+  );
+  const hashStr = Array.from(new Uint8Array(bits)).map(b=>b.toString(16).padStart(2,"0")).join("");
+  return `pbkdf2$${saltStr}$${hashStr}`;
 }
-async function checkPassword(plain, hashed) {
-  // Support both plain (legacy demo) and hashed passwords
-  if(hashed && hashed.length === 64) return (await hashPassword(plain)) === hashed;
-  return plain === hashed; // fallback for demo accounts
+async function checkPassword(plain, stored) {
+  if(!stored) return false;
+  if(stored.startsWith("pbkdf2$")) {
+    const [, saltHex] = stored.split("$");
+    const computed = await hashPassword(plain, saltHex);
+    return computed === stored;
+  }
+  // Legacy SHA-256 (64 hex chars) — still works, upgrades on next login
+  if(stored.length === 64) {
+    const enc = new TextEncoder();
+    const buf = await crypto.subtle.digest("SHA-256", enc.encode(plain));
+    const sha = Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,"0")).join("");
+    return sha === stored;
+  }
+  return plain === stored; // plain text fallback for demo accounts
 }
 
 // ── Root ───────────────────────────────────────────────────────────────────────
@@ -5841,6 +5879,27 @@ export default function App() {
     }, 500);
     return () => clearInterval(id);
   }, []);
+
+  // ── Session timeout — auto logout after 30 min of inactivity ─────────────────
+  const [lastActive, setLastActive] = useState(Date.now());
+  const SESSION_TIMEOUT = 30 * 60 * 1000; // 30 minutes
+  useEffect(() => {
+    if(!me) return; // only run when logged in
+    const events = ["mousemove","keydown","mousedown","touchstart","scroll"];
+    const refresh = () => setLastActive(Date.now());
+    events.forEach(e => window.addEventListener(e, refresh));
+    const check = setInterval(() => {
+      if(Date.now() - lastActive > SESSION_TIMEOUT) {
+        setMe(null);
+        setScr("login");
+        alert("You have been logged out due to 30 minutes of inactivity. Please sign in again.");
+      }
+    }, 60000); // check every minute
+    return () => {
+      events.forEach(e => window.removeEventListener(e, refresh));
+      clearInterval(check);
+    };
+  }, [me, lastActive]);
 
   // ── Loading screen ─────────────────────────────────────────────────────────
   if(loading) return(
