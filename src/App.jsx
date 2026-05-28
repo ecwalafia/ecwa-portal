@@ -913,7 +913,7 @@ function QRCodeImg({ text, size=80 }) {
         text: text || "ECWA Lafia DCC",
         width: size, height: size,
         colorDark: "#0b1f3a", colorLight: "#ffffff",
-        correctLevel: window.QRCode.CorrectLevel.M,
+        correctLevel: window.QRCode.CorrectLevel.L,
       });
     };
     render();
@@ -937,44 +937,22 @@ function StaffQR({ staff }) {
 }
 
 function DocQR({ doc, type }) {
-  // QR codes have a hard character limit — keep data short and essential only
-  // The old version included full comments and long approval chains, causing "code length overflow"
-  let lines = [];
+  // QR codes have a strict byte limit — use shortest possible text
+  const trim = (s,n) => s && s.length>n ? s.slice(0,n-1)+"~" : (s||"");
+  let text = "";
   if(type==="leave"){
-    const appr = (doc.approvals||[]);
-    lines = [
-      "ECWA LAFIA DCC - LEAVE APPROVAL",
-      "Ref: " + (doc.refNo||doc.id),
-      "Staff: " + doc.requester,
-      "Type: " + doc.type + " (" + doc.days + " days)",
-      "Dates: " + fdate(doc.startDate) + " to " + fdate(doc.endDate),
-      "Approvers: " + appr.map(a=>a.name).join(", "),
-      "Status: APPROVED",
-      "Date: " + fdate(today()),
-      "Kriz-Technologies",
-    ];
+    const ref = doc.refNo||doc.id||"";
+    const name = trim(doc.requester,20);
+    const dates = fdate(doc.startDate).slice(0,6)+"-"+fdate(doc.endDate).slice(0,6);
+    text = "ECWA LDCC LEAVE\n"+ref+"\n"+name+"\n"+doc.type.slice(0,12)+" "+doc.days+"d\n"+dates+"\nAPPROVED";
   } else {
-    const steps = ["secretary","accountant","auditor","chairman","vice_chairman"];
-    const approvers = steps.filter(k=>doc.signatures?.[k]).map(k=>{
-      return {secretary:"Secretary",accountant:"Finance",auditor:"Auditor",chairman:"Chairman",vice_chairman:"V.Chairman"}[k]||k;
-    });
-    // Truncate purpose to 60 chars to avoid QR overflow
-    const shortPurpose = (doc.purpose||"—").length > 60
-      ? (doc.purpose||"—").slice(0,57)+"..."
-      : (doc.purpose||"—");
-    lines = [
-      "ECWA LAFIA DCC - FUND REQUEST",
-      "Ref: " + doc.id,
-      "By: " + doc.requester,
-      "Amount: " + money(doc.amount),
-      "Purpose: " + shortPurpose,
-      "Approvers: " + approvers.join(", "),
-      "Status: APPROVED",
-      "Date: " + fdate(today()),
-      "Kriz-Technologies",
-    ];
+    const ref = trim(doc.id,16);
+    const name = trim(doc.requester,18);
+    const amt = "NGN"+Number(doc.amount||0).toLocaleString();
+    const purp = trim(doc.purpose||"",30);
+    text = "ECWA LDCC FUND\n"+ref+"\n"+name+"\n"+amt+"\n"+purp+"\nAPPROVED";
   }
-  return <QRCodeImg text={lines.filter(Boolean).join("\n")} size={80}/>;
+  return <QRCodeImg text={text} size={80}/>;
 }
 
 // ── Finance Print Form ────────────────────────────────────────────────────────
@@ -1473,7 +1451,7 @@ function LeaveLetter({ leave, users, onClose }) {
           {/* Letterhead */}
           <div style={{textAlign:"center",borderBottom:"3px double #0b1f3a",paddingBottom:8,marginBottom:10}}>
             <div style={{display:"flex",justifyContent:"center",alignItems:"center",gap:12,marginBottom:4}}>
-              <img src={LOGO} alt="ECWA" style={{width:52,height:52,borderRadius:"50%",objectFit:"cover",border:"2px solid #c9a84c"}}/>
+              <div style={{width:52,height:52,borderRadius:"50%",overflow:"hidden",border:"2px solid #c9a84c",flexShrink:0}}><img src={LOGO} alt="ECWA" style={{width:"100%",height:"100%",objectFit:"cover",display:"block"}}/></div>
               <div style={{textAlign:"left"}}>
                 <div style={{fontFamily:"Georgia,serif",fontSize:10,color:"#555",letterSpacing:1}}>EVANGELICAL CHURCH WINNING ALL</div>
                 <div style={{fontFamily:"Georgia,serif",fontSize:15,fontWeight:700,color:"#0b1f3a",lineHeight:1.2}}>ECWA Lafia District Church Council (LDCC)</div>
@@ -2755,7 +2733,7 @@ function IDCard({ staff, onClose }) {
           {/* Letterhead */}
           <div style={{textAlign:"center",borderBottom:"3px double #0b1f3a",paddingBottom:18,marginBottom:24}}>
             <div style={{display:"flex",justifyContent:"center",alignItems:"center",gap:12,marginBottom:4}}>
-              <img src={LOGO} alt="ECWA" style={{width:52,height:52,borderRadius:"50%",objectFit:"cover",border:"2px solid #c9a84c"}}/>
+              <div style={{width:52,height:52,borderRadius:"50%",overflow:"hidden",border:"2px solid #c9a84c",flexShrink:0}}><img src={LOGO} alt="ECWA" style={{width:"100%",height:"100%",objectFit:"cover",display:"block"}}/></div>
               <div style={{textAlign:"left"}}>
                 <div style={{fontFamily:"Georgia,serif",fontSize:10,color:"#555",letterSpacing:1}}>EVANGELICAL CHURCH WINNING ALL</div>
                 <div style={{fontFamily:"Georgia,serif",fontSize:15,fontWeight:700,color:"#0b1f3a",lineHeight:1.2}}>ECWA Lafia District Church Council (LDCC)</div>
@@ -5548,43 +5526,80 @@ function printElement(elementId) {
   const el = document.getElementById(elementId);
   if(!el) { window.print(); return; }
 
-  // Clone the element so we can safely strip large base64 images
-  // Base64 images in print windows cause Chrome's PDF renderer to hang
-  const clone = el.cloneNode(true);
-  clone.querySelectorAll("img").forEach(img => {
-    const src = img.getAttribute("src") || "";
-    // If it's a base64 data URI (not a real URL), replace with a placeholder
-    if(src.startsWith("data:")) {
-      const placeholder = document.createElement("div");
-      placeholder.style.cssText = "width:100%;height:100%;background:#f0ede8;display:flex;align-items:center;justify-content:center;font-size:10px;color:#aaa;border:1px solid #ddd;border-radius:4px;";
-      placeholder.textContent = "[Photo]";
-      img.replaceWith(placeholder);
+  // Step 1: Wait for QR canvas to be fully painted, then capture and print
+  // QR library renders asynchronously — we poll until the canvas has real pixels
+  const doCapture = (attempt) => {
+    const canvases = el.querySelectorAll("canvas");
+    // QRCode.js renders as canvas OR img depending on browser
+    // Check both: if canvas exists check pixels; if img exists check naturalWidth
+    const allReady = canvases.length === 0
+      ? el.querySelectorAll("img[src^='data:image/png']").length > 0 // img mode
+      : Array.from(canvases).every(c => {
+          try {
+            const ctx = c.getContext("2d");
+            const d = ctx.getImageData(0,0,4,4).data;
+            return Array.from(d).some((v,i)=>i%4!==3&&v<200);
+          } catch(e){ return true; }
+        });
+
+    if(!allReady && attempt < 20) {
+      setTimeout(()=>doCapture(attempt+1), 150);
+      return;
     }
-  });
 
-  const html = clone.innerHTML;
-  const win = window.open("","_blank","width=800,height=900");
-  if(!win) { alert("Please allow popups for this site to print."); return; }
+    // Convert canvas → img now that it's painted
+    // QRCode.js renders either a canvas OR an img depending on browser/config
+    canvases.forEach(canvas => {
+      try {
+        const img = document.createElement("img");
+        img.src = canvas.toDataURL("image/png");
+        img.width = canvas.width;
+        img.height = canvas.height;
+        img.style.cssText = canvas.style.cssText;
+        canvas.replaceWith(img);
+      } catch(e) { /* cross-origin canvas — skip */ }
+    });
+    // Also ensure any <img> tags inside QR divs have fully loaded
+    // (QRCode.js sometimes renders as <img> not <canvas>)
+    el.querySelectorAll("img").forEach(img => {
+      if(!img.complete) img.decode && img.decode().catch(()=>{});
+    });
 
-  win.document.write(`<!DOCTYPE html><html><head><title>ECWA Lafia DCC</title>
-  <style>
-    *{box-sizing:border-box;margin:0;padding:0;}
-    body{font-family:'Segoe UI',sans-serif;font-size:13px;color:#222;padding:20px;}
-    table{width:100%;border-collapse:collapse;}
-    td{padding:7px 12px;border-bottom:1px solid #e8e4dc;}
-    img{max-width:100%;height:auto;}
-    .no-print{display:none!important;}
-    @media print{
-      body{padding:0;}
-      @page{margin:12mm;}
-    }
-  </style></head><body>${html}</body></html>`);
-  win.document.close();
+    // Clone after canvas conversion
+    const clone = el.cloneNode(true);
 
-  // Use onload instead of a blind setTimeout — fires when the page is truly ready
-  win.onload = () => { win.focus(); win.print(); };
-  // Fallback in case onload already fired (some browsers)
-  if(win.document.readyState === "complete") { win.focus(); win.print(); }
+    // Only strip genuinely huge base64 blobs (>700KB = attached documents)
+    // Staff photos and logos are small — keep them so they show in print
+    clone.querySelectorAll("img").forEach(img => {
+      const src = img.getAttribute("src") || "";
+      if(src.startsWith("data:") && src.length > 700000) {
+        const placeholder = document.createElement("div");
+        placeholder.style.cssText = "width:110px;height:130px;background:#f0ede8;display:flex;align-items:center;justify-content:center;font-size:10px;color:#aaa;border:2px solid #0b1f3a;border-radius:4px;font-family:Georgia,serif;text-align:center;padding:8px;";
+        placeholder.textContent = "Attached Document";
+        img.replaceWith(placeholder);
+      }
+    });
+
+    const html = clone.innerHTML;
+    const win = window.open("","_blank","width=800,height=900");
+    if(!win) { alert("Please allow popups for this site to print."); return; }
+
+    win.document.write(`<!DOCTYPE html><html><head><title>ECWA Lafia DCC</title>
+    <style>
+      *{box-sizing:border-box;margin:0;padding:0;}
+      body{font-family:'Segoe UI','Trebuchet MS',sans-serif;font-size:13px;color:#222;padding:20px;}
+      table{width:100%;border-collapse:collapse;}
+      td{padding:7px 12px;border-bottom:1px solid #e8e4dc;}
+      img{max-width:100%;height:auto;display:block;}
+      .no-print{display:none!important;}
+      @media print{body{padding:0;}@page{margin:12mm;}}
+    </style></head><body>${html}</body></html>`);
+    win.document.close();
+    win.onload = () => { win.focus(); win.print(); };
+    if(win.document.readyState === "complete") { win.focus(); win.print(); }
+  };
+
+  doCapture(0);
 }
 
 // ── Password hashing (SHA-256 via Web Crypto API — no library needed) ─────────
