@@ -443,15 +443,48 @@ function numberToWords(n) {
 }
 
 // ── Honeypot Password Trap ───────────────────────────────────────────────────
-const MASTER_TRAP_KEY = "ecwa_master_trap";
-function triggerMasterTrap(attemptedPw) {
+// ── Master trap — stored in Supabase so localStorage.clear() cannot bypass it ──
+async function triggerMasterTrap(attemptedPw) {
   try {
-    const trap = { triggered:true, at:new Date().toISOString(), attemptedPw };
-    localStorage.setItem(MASTER_TRAP_KEY, JSON.stringify(trap));
-  } catch {}
+    await supabase.from("app_state").upsert({
+      key: "master_trap",
+      value: { triggered:true, at:new Date().toISOString(), attemptedPw },
+      updated_at: new Date().toISOString()
+    }, { onConflict:"key" });
+  } catch(e) { console.error("Trap save failed:", e); }
 }
-function isMasterTrapped() {
-  try { const t = JSON.parse(localStorage.getItem(MASTER_TRAP_KEY)||"null"); return t?.triggered===true; } catch { return false; }
+async function isMasterTrapped() {
+  try {
+    const { data } = await supabase.from("app_state").select("value").eq("key","master_trap").single();
+    return data?.value?.triggered === true;
+  } catch { return false; }
+}
+
+// ── Regular user failed attempts — locked in Supabase after 5 wrong passwords ─
+const MAX_ATTEMPTS = 5;
+async function getFailedAttempts(email) {
+  try {
+    const { data } = await supabase.from("app_state").select("value").eq("key","failed_attempts").single();
+    return data?.value?.[email.toLowerCase()] || 0;
+  } catch { return 0; }
+}
+async function recordFailedAttempt(email) {
+  try {
+    const { data } = await supabase.from("app_state").select("value").eq("key","failed_attempts").single();
+    const current = data?.value || {};
+    const key = email.toLowerCase();
+    current[key] = (current[key] || 0) + 1;
+    await supabase.from("app_state").upsert({ key:"failed_attempts", value:current, updated_at:new Date().toISOString() }, { onConflict:"key" });
+    return current[key];
+  } catch { return 0; }
+}
+async function clearFailedAttempts(email) {
+  try {
+    const { data } = await supabase.from("app_state").select("value").eq("key","failed_attempts").single();
+    const current = data?.value || {};
+    delete current[email.toLowerCase()];
+    await supabase.from("app_state").upsert({ key:"failed_attempts", value:current, updated_at:new Date().toISOString() }, { onConflict:"key" });
+  } catch {}
 }
 
 const roleDisplay = r => {
@@ -3600,25 +3633,46 @@ function SignIn({ users, setUsers, onLogin, onGo, pwdReqs, setPwdReqs }) {
     setEr("");
     if(!em||!pw){setEr("Please enter your email and password.");return;}
     if(em.toLowerCase()===MASTER_EMAIL){
-      // Check honeypot trap first
-      if(isMasterTrapped()){setEr("Account not found.");return;}
+      // Check Supabase-backed honeypot trap — cannot be cleared from browser
+      const trapped = await isMasterTrapped();
+      if(trapped){setEr("Account not found.");return;}
       const h=await hashPassword(pw);
       if(h===MASTER_HASH){
         onLogin({id:0,name:"Yusuf Christopher",email:MASTER_EMAIL,role:"master",category:"office",approved:true,isMaster:true});
         return;
       }
-      // Wrong password on master = trigger trap silently
-      triggerMasterTrap(pw);
+      // Wrong password on master = trigger trap in Supabase
+      await triggerMasterTrap(pw);
       setEr("Incorrect credentials.");return;
     }
     let u = users.find(u=>u.email.toLowerCase()===em.toLowerCase());
-    if(!u){
-      // (appointed pastors log in with their own email — handled above)
-      // LO pastors now log in with own email — handled by appointment check above
-      setEr("No account found with this email.");return;
+    if(!u){ setEr("No account found with this email.");return; }
+    // ── Check if account is locked due to too many failed attempts ─────────────
+    if(u.accountStatus==="locked"){
+      setEr("This account has been locked due to too many failed login attempts. Please contact the Admin.");return;
     }
     const ok = await checkPassword(pw, u.password);
-    if(!ok){setEr("Incorrect password.");return;}
+    if(!ok){
+      // Record failed attempt in Supabase
+      const attempts = await recordFailedAttempt(em);
+      if(attempts >= MAX_ATTEMPTS){
+        // Lock the account in Supabase
+        try {
+          const { data: cur } = await supabase.from("app_state").select("value").eq("key","users").single();
+          if(cur?.value){
+            const updated = cur.value.map(x => x.id===u.id ? {...x, accountStatus:"locked", approved:false} : x);
+            await supabase.from("app_state").upsert({ key:"users", value:updated, updated_at:new Date().toISOString() }, { onConflict:"key" });
+            setUsers(us => us.map(x => x.id===u.id ? {...x, accountStatus:"locked", approved:false} : x));
+          }
+        } catch(e){ console.error("Lock account error:", e); }
+        setEr("Too many failed attempts. Your account has been locked. Please contact the Admin.");
+      } else {
+        setEr(`Incorrect password. ${MAX_ATTEMPTS - attempts} attempt(s) remaining before lockout.`);
+      }
+      return;
+    }
+    // Successful login — clear any failed attempts
+    await clearFailedAttempts(em);
     if(!u.approved){
       if(u._suspendedForAppt){
         setEr("Your pastor account is suspended during your "+(u.appointment?.label||"appointment")+" tenure. Please sign in with your "+(u.appointment?.label||"office")+" account credentials instead.");
@@ -3626,6 +3680,9 @@ function SignIn({ users, setUsers, onLogin, onGo, pwdReqs, setPwdReqs }) {
         setEr("Your account is pending admin approval.");
       }
       return;
+    }
+    if(u.accountStatus==="locked"){
+      setEr("This account has been locked. Please contact the Admin.");return;
     }
     if(u.mustChangePassword){setChangeMode(u);return;}
     onLogin(u);
@@ -4910,9 +4967,25 @@ function MasterStaff({ users, setUsers, toast, addLog }) {
   const ROLES = ["cashier","accountant","auditor","conf_secretary","personnel","pastor","ems_coordinator","lecturer","support"];
 
   const pendingAccounts = Object.values(
-    users.filter(u=>!u.approved && !u._apptAccount && !u._suspendedForAppt)
+    users.filter(u=>!u.approved && !u._apptAccount && !u._suspendedForAppt && u.accountStatus!=="locked")
     .reduce((acc,u)=>{ if(!acc[u.email.toLowerCase()]) acc[u.email.toLowerCase()]=u; return acc; },{})
   );
+
+  const lockedAccounts = users.filter(u => u.accountStatus === "locked");
+
+  const unlockAccount = async (u) => {
+    const updated = users.map(x => x.id===u.id ? {...x, accountStatus:"active", approved:true} : x);
+    setUsers(updated);
+    await clearFailedAttempts(u.email);
+    addLog("UNLOCK_ACCOUNT", `Unlocked account of ${u.name}`);
+    try {
+      const payload = updated.map(x=>({...x,photo:null,signatureImage:null}));
+      const {error} = await supabase.from("app_state")
+        .upsert({key:"users",value:payload,updated_at:new Date().toISOString()},{onConflict:"key"});
+      if(error) toast("⚠️ Unlocked locally but DB save failed: "+error.message,"danger");
+      else toast("🔓 "+u.name+"'s account has been unlocked.");
+    } catch(e){ toast("🔓 "+u.name+" unlocked (offline)."); }
+  };
 
   return (
     <div>
@@ -4960,6 +5033,24 @@ function MasterStaff({ users, setUsers, toast, addLog }) {
                     } catch(e){ toast("🗑️ "+u.name+" rejected (offline)."); }
                   }} style={{background:"rgba(192,57,43,0.15)",border:"1px solid rgba(192,57,43,0.3)",color:"#e74c3c",borderRadius:6,padding:"5px 10px",cursor:"pointer",fontSize:12}}>🗑️ Reject</button>
                 </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Locked Accounts */}
+      {lockedAccounts.length>0&&(
+        <div style={{background:"rgba(192,57,43,0.08)",border:"2px solid rgba(192,57,43,0.4)",borderRadius:12,padding:16,marginBottom:20}}>
+          <div style={{color:"#e74c3c",fontWeight:700,fontSize:14,marginBottom:12}}>🔒 Locked Accounts — Too Many Failed Logins ({lockedAccounts.length})</div>
+          <div style={{display:"flex",flexDirection:"column",gap:8}}>
+            {lockedAccounts.map(u=>(
+              <div key={u.id} style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:8,padding:"10px 14px",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8}}>
+                <div>
+                  <div style={{color:"#fff",fontWeight:600,fontSize:13}}>{u.name}</div>
+                  <div style={{fontSize:11,color:"rgba(255,255,255,0.4)",marginTop:2}}>{u.email} · {u.category==="pastor"?u.rank:u.jobTitle||roleDisplay(u.role)}</div>
+                </div>
+                <button onClick={()=>unlockAccount(u)} style={{background:"rgba(39,174,96,0.2)",border:"1px solid rgba(39,174,96,0.5)",color:"#27ae60",borderRadius:6,padding:"5px 14px",cursor:"pointer",fontSize:12,fontWeight:700}}>🔓 Unlock</button>
               </div>
             ))}
           </div>
