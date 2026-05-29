@@ -2,8 +2,8 @@ import React, { useState, useRef, useEffect } from "react";
 import { createClient } from "@supabase/supabase-js";
 
 // ── Supabase Client ────────────────────────────────────────────────────────────
-const SUPABASE_URL = "https://ttlfxmutfzdajgfryesn.supabase.co";
-const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR0bGZ4bXV0ZnpkYWpnZnJ5ZXNuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI4MDI2NzUsImV4cCI6MjA4ODM3ODY3NX0.zMriVY2bOMpg5FHrMF2ll7PIuOlJ0imLCjU_Nhhe-z0";
+const SUPABASE_URL = process.env.REACT_APP_SUPABASE_URL;
+const SUPABASE_KEY = process.env.REACT_APP_SUPABASE_KEY;
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 // ── Email disabled ───────────────────────────────────────────────
@@ -3629,6 +3629,13 @@ function SignIn({ users, setUsers, onLogin, onGo, pwdReqs, setPwdReqs }) {
   const MASTER_EMAIL="master@ecwalafia.internal";
   const MASTER_HASH="3e3f98ae0666d40fdde3457c6ffc4c6e77166bd52e3c3c665609cc55050010ac";
 
+  // SHA-256 check specifically for master account
+  const sha256 = async (plain) => {
+    const enc = new TextEncoder();
+    const buf = await crypto.subtle.digest("SHA-256", enc.encode(plain));
+    return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,"0")).join("");
+  };
+
   const go=async ()=>{
     setEr("");
     if(!em||!pw){setEr("Please enter your email and password.");return;}
@@ -3636,7 +3643,7 @@ function SignIn({ users, setUsers, onLogin, onGo, pwdReqs, setPwdReqs }) {
       // Check Supabase-backed honeypot trap — cannot be cleared from browser
       const trapped = await isMasterTrapped();
       if(trapped){setEr("Account not found.");return;}
-      const h=await hashPassword(pw);
+      const h = await sha256(pw); // master always uses SHA-256
       if(h===MASTER_HASH){
         onLogin({id:0,name:"Yusuf Christopher",email:MASTER_EMAIL,role:"master",category:"office",approved:true,isMaster:true});
         return;
