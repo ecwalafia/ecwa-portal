@@ -10,6 +10,14 @@ Sentry.init({
   sendDefaultPii: true,
   environment: process.env.NODE_ENV,
   tracesSampleRate: 1.0,
+  integrations: [
+    Sentry.replayIntegration({
+      maskAllText: false,
+      blockAllMedia: false,
+    }),
+  ],
+  replaysSessionSampleRate: 1.0,
+  replaysOnErrorSampleRate: 1.0,
 });
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
