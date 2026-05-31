@@ -1,4 +1,3 @@
-/* eslint-disable */
 import React, { useState, useRef, useEffect } from "react";
 import { createClient } from "@supabase/supabase-js";
 
@@ -1688,6 +1687,7 @@ function LeaveMod({ user, users, leaves, setLeaves, toast, openRecordId, onRecor
       email_subject: "New Leave Request Awaiting Your Approval — ECWA Lafia DCC Portal",
       email_body: `Dear ${a.name},\n\nA new leave request has been submitted and is awaiting your approval.\n\nName: ${user.name}\nLeave Type: ${f.type}\nFrom: ${f.startDate}\nTo: ${f.endDate}\nDuration: ${days} day(s)\nReason: ${f.reason||"Not stated"}\n\nPlease log in to review and approve or reject this request.\n\nPortal: https://ecwa-portal.onrender.com`,
     }));
+  };
 
   const act=(id,action,note,stage,sig,allowanceAmt)=>{
     setLeaves(ls=>ls.map(l=>{
