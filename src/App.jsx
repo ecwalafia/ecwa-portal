@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from "react";
 import { createClient } from "@supabase/supabase-js";
+import emailjs from "@emailjs/browser";
 
 // ── Supabase Client ────────────────────────────────────────────────────────────
 const SUPABASE_URL = process.env.REACT_APP_SUPABASE_URL;
@@ -11,28 +12,21 @@ const EMAILJS_SERVICE_ID  = "service_syikpap";
 const EMAILJS_TEMPLATE_ID = "et2waqp";
 const EMAILJS_PUBLIC_KEY  = "Sdf7RdVgkhSv_FE3S";
 
+emailjs.init(EMAILJS_PUBLIC_KEY);
+
 async function sendGenericEmail({ to_email, to_name, email_subject, email_body }) {
   if(!to_email) return;
   try {
-    const res = await fetch("https://api.emailjs.com/api/v1.0/email/send", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        service_id:  EMAILJS_SERVICE_ID,
-        template_id: EMAILJS_TEMPLATE_ID,
-        user_id:     EMAILJS_PUBLIC_KEY,
-        template_params: {
-          to_email,
-          to_name:       to_name || "",
-          email_subject: email_subject || "Notification — ECWA Lafia DCC Portal",
-          email_body,
-        },
-      }),
-    });
-    if(!res.ok) {
-      const err = await res.text();
-      console.error("EmailJS error:", err);
-    }
+    await emailjs.send(
+      EMAILJS_SERVICE_ID,
+      EMAILJS_TEMPLATE_ID,
+      {
+        to_email,
+        to_name:       to_name || "",
+        email_subject: email_subject || "Notification — ECWA Lafia DCC Portal",
+        email_body,
+      }
+    );
   } catch(e) {
     console.error("Email send failed:", e);
   }
@@ -5460,7 +5454,7 @@ function Dashboard({ user, users, setUsers, requests, setRequests, leaves, setLe
   const canF = (isOffice && user.role!=="lo")||isMaster;
   const canL = true;
   const canS = isPastor||isLO||["secretary","ads","conf_secretary","chairman","accountant","master"].includes(user.role)||isMaster;
-  const canAtt = isOffice||isMaster;
+  const canAtt = (isOffice && !isLO)||isMaster;
   const canAnn = true;
   const canPwdMgr = ["secretary","ads","conf_secretary","personnel","master"].includes(user.role)||user.isMaster===true;
 
@@ -5515,7 +5509,7 @@ function Dashboard({ user, users, setUsers, requests, setRequests, leaves, setLe
               </button>
               {notifOpen&&<NotifPanel notifs={notifs} onRead={markRead} onClose={()=>setNotifOpen(false)} onNavigate={(m,rid)=>{setMod(m);if(rid)setNotifOpenRecord(rid);setNotifOpen(false);}}/>}
             </div>
-            <button className="btn-ghost" style={{fontSize:11,padding:"5px 8px"}} onClick={()=>setIdCard(true)}>📋 Biodata</button>
+            {!isLO&&<button className="btn-ghost" style={{fontSize:11,padding:"5px 8px"}} onClick={()=>setIdCard(true)}>📋 Biodata</button>}
             <div style={{textAlign:"right",maxWidth:110}}>
               <div style={{color:"#fff",fontSize:11,fontWeight:600,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{user.name.split(" ").slice(-1)[0]}</div>
               <div style={{color:"#c9a84c",fontSize:9,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{roleDisplay(user.role)}</div>
@@ -5544,7 +5538,7 @@ function Dashboard({ user, users, setUsers, requests, setRequests, leaves, setLe
               </button>
               {notifOpen&&<NotifPanel notifs={notifs} onRead={markRead} onClose={()=>setNotifOpen(false)} onNavigate={(m,rid)=>{setMod(m);if(rid)setNotifOpenRecord(rid);setNotifOpen(false);}}/>}
             </div>
-            <button style={{background:"rgba(255,255,255,0.12)",border:"none",borderRadius:8,color:"#fff",padding:"7px 10px",cursor:"pointer",fontSize:16,minWidth:38,textAlign:"center"}} onClick={()=>setIdCard(true)}>📋</button>
+            {!isLO&&<button style={{background:"rgba(255,255,255,0.12)",border:"none",borderRadius:8,color:"#fff",padding:"7px 10px",cursor:"pointer",fontSize:16,minWidth:38,textAlign:"center"}} onClick={()=>setIdCard(true)}>📋</button>}
             <button style={{background:"rgba(192,57,43,0.9)",border:"none",borderRadius:8,color:"#fff",padding:"7px 14px",cursor:"pointer",fontSize:12,fontWeight:700,letterSpacing:0.3}} onClick={onLogout}>Exit</button>
           </div>
         </div>
@@ -6041,7 +6035,7 @@ export default function App() {
           if(readErr) throw new Error("Could not connect. Check your internet connection.");
           const latest = (data?.value && Array.isArray(data.value)) ? data.value : users;
           if(latest.find(x=>x.email.toLowerCase()===u.email.toLowerCase())) throw new Error("This email is already registered.");
-          const newId = Math.max(0,...latest.map(x=>x.id))+1;
+          const newId = Date.now();
           const newUser = {id:newId,...u};
           const updated = [...latest, newUser];
           // Strip sig from DB payload — keep full sig in local state only
