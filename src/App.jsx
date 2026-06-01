@@ -6,42 +6,32 @@ const SUPABASE_URL = process.env.REACT_APP_SUPABASE_URL;
 const SUPABASE_KEY = process.env.REACT_APP_SUPABASE_KEY;
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-// ── Resend Email Client ────────────────────────────────────────────────────────
-const RESEND_KEY = process.env.REACT_APP_RESEND_KEY;
-const FROM_EMAIL = "ECWA Lafia DCC <onboarding@resend.dev>";
+// ── EmailJS Client ─────────────────────────────────────────────────────────────
+const EMAILJS_SERVICE_ID  = "service_syikpap";
+const EMAILJS_TEMPLATE_ID = "et2waqp";
+const EMAILJS_PUBLIC_KEY  = "Sdf7RdVgkhSv_FE3S";
 
 async function sendGenericEmail({ to_email, to_name, email_subject, email_body }) {
-  if(!RESEND_KEY || !to_email) return;
+  if(!to_email) return;
   try {
-    const res = await fetch("https://api.resend.com/emails", {
+    const res = await fetch("https://api.emailjs.com/api/v1.0/email/send", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${RESEND_KEY}`,
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        from: FROM_EMAIL,
-        to: [to_email],
-        subject: email_subject || "Notification — ECWA Lafia DCC Portal",
-        text: email_body,
-        html: `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:24px;">
-          <div style="background:#0b1f3a;padding:20px;border-radius:8px 8px 0 0;text-align:center;">
-            <h2 style="color:#c9a84c;margin:0;font-family:Georgia,serif;">ECWA Lafia DCC</h2>
-            <p style="color:rgba(255,255,255,0.6);font-size:12px;margin:4px 0 0;">Staff Management Portal</p>
-          </div>
-          <div style="background:#ffffff;padding:24px;border:1px solid #e0e0e0;border-top:none;">
-            ${to_name ? `<p style="color:#333;margin-bottom:16px;">Dear <strong>${to_name}</strong>,</p>` : ""}
-            <div style="color:#333;line-height:1.8;white-space:pre-line;">${email_body}</div>
-          </div>
-          <div style="background:#f5f5f5;padding:12px;border-radius:0 0 8px 8px;text-align:center;border:1px solid #e0e0e0;border-top:none;">
-            <p style="color:#999;font-size:11px;margin:0;">ECWA Lafia DCC Portal · <a href="https://ecwa-portal.onrender.com" style="color:#c9a84c;">ecwa-portal.onrender.com</a></p>
-          </div>
-        </div>`,
+        service_id:  EMAILJS_SERVICE_ID,
+        template_id: EMAILJS_TEMPLATE_ID,
+        user_id:     EMAILJS_PUBLIC_KEY,
+        template_params: {
+          to_email,
+          to_name:       to_name || "",
+          email_subject: email_subject || "Notification — ECWA Lafia DCC Portal",
+          email_body,
+        },
       }),
     });
     if(!res.ok) {
-      const err = await res.json();
-      console.error("Resend error:", err);
+      const err = await res.text();
+      console.error("EmailJS error:", err);
     }
   } catch(e) {
     console.error("Email send failed:", e);
