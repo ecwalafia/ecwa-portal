@@ -5905,19 +5905,24 @@ export default function App() {
   useEffect(() => {
     if(loading) return;
     const interval = setInterval(async () => {
-      if(_sbSaving) return; // never read while a write is in flight
+      if(_sbSaving) return;
       try {
-        const { data } = await supabase.from("app_state").select("*");
-        if(data && data.length > 0) {
-          const map = Object.fromEntries(data.map(r => [r.key, r.value]));
-          // Always do a full refresh so fixed IDs in Supabase are respected
-          if(map.users)         setUsers(map.users);
-          if(map.leaves)        setLeaves(map.leaves);
-          if(map.requests)      setReqs(map.requests);
-          if(map.sundayReports) setSundayReports(map.sundayReports);
-          if(map.announcements) setAnnouncements(map.announcements);
-          if(map.pwdReqs)       setPwdReqs(map.pwdReqs);
-          if(map.lccs)          setLccs(map.lccs);
+        const { data } = await supabase.from("app_state").select("value").eq("key","users").single();
+        if(data?.value) {
+          setUsers(prev => {
+            const remote = data.value;
+            // Merge: remote is source of truth for IDs, preserve local changes
+            const remoteMap = Object.fromEntries(
+              remote.filter(u => u.id != null).map(u => [String(u.id), u])
+            );
+            const localNonNull = prev.filter(u => u.id != null);
+            const localIds = new Set(localNonNull.map(u => String(u.id)));
+            const brandNew = remote.filter(u => u.id != null && !localIds.has(String(u.id)));
+            // Update existing users with remote data (picks up ID fixes)
+            const updated = localNonNull.map(u => remoteMap[String(u.id)] || u);
+            if(brandNew.length > 0) return [...updated, ...brandNew];
+            return updated;
+          });
         }
       } catch(e) {}
     }, 60000);
@@ -6037,7 +6042,8 @@ export default function App() {
           if(readErr) throw new Error("Could not connect. Check your internet connection.");
           const latest = (data?.value && Array.isArray(data.value)) ? data.value : users;
           if(latest.find(x=>x.email.toLowerCase()===u.email.toLowerCase())) throw new Error("This email is already registered.");
-          const newId = Math.max(0, ...latest.filter(x=>typeof x.id==="number").map(x=>x.id)) + 1;
+          const numericIds = latest.filter(x=>typeof x.id==="number" && x.id < 100000).map(x=>x.id);
+          const newId = Math.max(28, ...numericIds) + 1;
           const newUser = {id:newId,...u};
           const updated = [...latest, newUser];
           // Strip sig from DB payload — keep full sig in local state only
