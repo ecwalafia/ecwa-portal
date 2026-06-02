@@ -6054,6 +6054,7 @@ export default function App() {
           const { error:saveErr } = await supabase.from("app_state")
             .upsert({ key:"users", value:dbPayload, updated_at:new Date().toISOString() }, { onConflict:"key" });
           if(saveErr) throw new Error("Save failed: " + saveErr.message);
+          sbCancelPending("users");
           setUsers(updated);
         }} onGo={setScr}/>
       }
