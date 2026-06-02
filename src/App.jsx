@@ -15,23 +15,24 @@ const EMAILJS_PUBLIC_KEY  = "Sdf7RdVgkhSv_FE3S";
 emailjs.init(EMAILJS_PUBLIC_KEY);
 
 async function sendGenericEmail({ to_email, to_name, email_subject, email_body }) {
-  if(!to_email) return;
+  if(!to_email) { console.warn("sendGenericEmail: no to_email"); return; }
+  console.log("Sending email to:", to_email, "Subject:", email_subject);
   try {
-    await emailjs.send(
+    const result = await emailjs.send(
       EMAILJS_SERVICE_ID,
       EMAILJS_TEMPLATE_ID,
       {
         to_email,
-        to_name:       to_name || "",
+        to_name: to_name || "",
         email_subject: email_subject || "Notification — ECWA Lafia DCC Portal",
         email_body,
       }
     );
+    console.log("Email sent OK:", result.status, result.text);
   } catch(e) {
-    console.error("Email send failed:", e);
+    console.error("Email failed:", e.status, e.text, JSON.stringify(e));
   }
 }
-
 async function sendApprovalEmail({ to_email, to_name, email_subject, email_body }) {
   return sendGenericEmail({ to_email, to_name, email_subject, email_body });
 }
@@ -539,11 +540,11 @@ const canActLeave = (user, leave, users=[]) => {
   if(user.isMaster===true&&leave.status.startsWith("pending"))return leave.status.replace("pending_","");
   if(leave.status==="pending_dept"){
     if(leave.requester_role==="pastor"||leave.category==="pastor"){
-      const lo = getLOForLCC(users, leave.lcc);
-      if(lo && user.id===lo.id) return "dept";
+      // Only the dedicated LO account can forward pastor leaves
       if(user.role==="lo" && user.lcc_overseen===leave.lcc) return "dept";
       return null;
     }
+
     const dh = deptHeadRole(leave.dept);
     if(user.role==="ads" && leave.requester_role==="secretary") return "dept";
     if(user.role==="vice_chairman" && leave.requester_role==="chairman") return "dept";
@@ -4375,7 +4376,7 @@ function LOAppointments({ users, setUsers, lccs, toast, addLog, user }) {
     !u.appointment?.active && !u.loAppointment?.active &&
     (!filter || u.name?.toLowerCase().includes(filter.toLowerCase()))
   );
-  const loEmail = lcc => "LO"+lcc.replace(/[\s']/g,"")+"LCC@ecwalafia.org";
+  const loEmail = lcc => "LO"+lcc.replace(/[\s']+/g,"")+"LCC@ecwalafia.org";
 
   const appoint = async (lcc, pastor) => {
     const chars = "ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
@@ -6035,7 +6036,7 @@ export default function App() {
           if(readErr) throw new Error("Could not connect. Check your internet connection.");
           const latest = (data?.value && Array.isArray(data.value)) ? data.value : users;
           if(latest.find(x=>x.email.toLowerCase()===u.email.toLowerCase())) throw new Error("This email is already registered.");
-          const newId = Date.now();
+          const newId = Math.max(0, ...latest.filter(x=>typeof x.id==="number").map(x=>x.id)) + 1;
           const newUser = {id:newId,...u};
           const updated = [...latest, newUser];
           // Strip sig from DB payload — keep full sig in local state only
