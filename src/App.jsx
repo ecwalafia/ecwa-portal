@@ -5902,32 +5902,12 @@ export default function App() {
   }, []);
 
   // ── Live poll — only picks up brand-new signups, never overwrites local state ──
-  useEffect(() => {
-    if(loading) return;
-    const interval = setInterval(async () => {
-      if(_sbSaving) return;
-      try {
-        const { data } = await supabase.from("app_state").select("value").eq("key","users").single();
-        if(data?.value) {
-          setUsers(prev => {
-            const remote = data.value;
-            // Merge: remote is source of truth for IDs, preserve local changes
-            const remoteMap = Object.fromEntries(
-              remote.filter(u => u.id != null).map(u => [String(u.id), u])
-            );
-            const localNonNull = prev.filter(u => u.id != null);
-            const localIds = new Set(localNonNull.map(u => String(u.id)));
-            const brandNew = remote.filter(u => u.id != null && !localIds.has(String(u.id)));
-            // Update existing users with remote data (picks up ID fixes)
-            const updated = localNonNull.map(u => remoteMap[String(u.id)] || u);
-            if(brandNew.length > 0) return [...updated, ...brandNew];
-            return updated;
-          });
-        }
-      } catch(e) {}
-    }, 60000);
-    return () => clearInterval(interval);
-  }, [loading]);
+  // Polling disabled — all saves go directly to Supabase immediately on action
+  // No background sync needed as every state change triggers an immediate DB write
+
+
+
+
 
   // ── Auto-save each collection to Supabase when it changes ─────────────────
   useEffect(() => { if(!loading) sbSave("users", users); }, [users, loading]);
