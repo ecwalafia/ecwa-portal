@@ -5894,15 +5894,64 @@ export default function App() {
         if (data && data.length > 0) {
           const map = Object.fromEntries(data.map(r => [r.key, r.value]));
           if (map.users) {
+            // ── One-time data migration (runs every load; idempotent) ────────────
+            let migrated = map.users;
+
+            // 1. Remove ONE duplicate wasuku@ecwalafia.org (keep the first occurrence)
+            const seenWasuku = new Set();
+            migrated = migrated.filter(u => {
+              if (u.email === "wasuku@ecwalafia.org") {
+                if (seenWasuku.has("wasuku")) return false; // drop duplicate
+                seenWasuku.add("wasuku");
+              }
+              return true;
+            });
+
+            // 2. Remap old generated IDs → clean numeric IDs
+            const ID_MAP = { "1780317397852": 30, "1780334790289": 31 };
+            migrated = migrated.map(u => {
+              const newId = ID_MAP[String(u.id)];
+              return newId !== undefined ? { ...u, id: newId } : u;
+            });
+
+            // 3. Add Tuwan Joshua Gulek (id 29) if not already present
+            const tuwanExists = migrated.some(u => u.id === 29 || u.email === "tuwan@ecwalafia.org");
+            if (!tuwanExists) {
+              migrated = [...migrated, {
+                id: 29, dob: "1966-06-29", doj: "1999-09-01", lcc: "Lafia", lga: "", dept: "",
+                docs: {}, name: "Tuwan Joshua Gulek", rank: "Reverend", role: "pastor",
+                email: "tuwan@ecwalafia.org", lc_ph: "ECWA Goodnews GRA", phone: "08036420945",
+                photo: null, tribe: "", gender: "", address: "", nokName: "", approved: true,
+                category: "pastor", jobTitle: "", nokPhone: "",
+                password: "pbkdf2$0330c4b6f575223f3d586e4ac3575ac8$3c6abb345ce27f152beb9154180da1f4bfa90ea5230f52f510d08b70db31b7d2",
+                gradeLevel: "ESSP/10", nokAddress: "", institution: "", nationality: "Nigerian",
+                nokRelation: "", gradePending: false, lcc_overseen: "", accountStatus: "active",
+                maritalStatus: "", stateOfOrigin: "", yearGraduated: "", signatureImage: null,
+                transferHistory: [], customDocSections: [], otherQualifications: "",
+                highestQualification: ""
+              }];
+            }
+
+            // Save migration result back to Supabase immediately, then cancel pending auto-save
+            (async () => {
+              try {
+                const payload = migrated.map(u => ({ ...u, photo: null, signatureImage: null }));
+                await supabase.from("app_state")
+                  .upsert({ key: "users", value: payload, updated_at: new Date().toISOString() }, { onConflict: "key" });
+                sbCancelPending("users");
+              } catch(e) { console.error("Migration save error:", e); }
+            })();
+            // ────────────────────────────────────────────────────────────────────
+
             if (assets && assets.length > 0) {
               const assetMap = Object.fromEntries(assets.map(a => [String(a.user_id), a]));
-              const merged = map.users.map(u => {
+              const merged = migrated.map(u => {
                 const a = assetMap[String(u.id)];
                 return a ? { ...u, photo: a.photo||null, signatureImage: null } : u;
               });
               setUsers(merged);
             } else {
-              setUsers(map.users);
+              setUsers(migrated);
             }
           }
           if (map.requests)      setReqs(map.requests);
