@@ -5907,16 +5907,17 @@ export default function App() {
     const interval = setInterval(async () => {
       if(_sbSaving) return; // never read while a write is in flight
       try {
-        const { data } = await supabase.from("app_state").select("value").eq("key","users").single();
-        if(data?.value) {
-          setUsers(prev => {
-            const remote = data.value;
-            const prevIds = new Set(prev.map(u => u.id));
-            const brandNew = remote.filter(u => !prevIds.has(u.id));
-            // Only add genuinely new users — NEVER overwrite existing ones
-            if(brandNew.length > 0) return [...prev, ...brandNew];
-            return prev; // no change
-          });
+        const { data } = await supabase.from("app_state").select("*");
+        if(data && data.length > 0) {
+          const map = Object.fromEntries(data.map(r => [r.key, r.value]));
+          // Always do a full refresh so fixed IDs in Supabase are respected
+          if(map.users)         setUsers(map.users);
+          if(map.leaves)        setLeaves(map.leaves);
+          if(map.requests)      setReqs(map.requests);
+          if(map.sundayReports) setSundayReports(map.sundayReports);
+          if(map.announcements) setAnnouncements(map.announcements);
+          if(map.pwdReqs)       setPwdReqs(map.pwdReqs);
+          if(map.lccs)          setLccs(map.lccs);
         }
       } catch(e) {}
     }, 60000);
