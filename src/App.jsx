@@ -5026,7 +5026,12 @@ function MasterStaff({ users, setUsers, toast, addLog }) {
       const { error } = await supabase.from("app_state")
         .upsert({ key:"users", value:payload, updated_at:new Date().toISOString() }, { onConflict:"key" });
       if(error) toast("⚠️ Deleted locally but DB save failed: "+error.message, "danger");
-      else toast("🗑️ Account deleted.");
+      else {
+        sbCancelPending("users");
+        const { data: fresh3 } = await supabase.from("app_state").select("value").eq("key","users").single();
+        if(fresh3?.value) setUsers(fresh3.value);
+        toast("🗑️ Account deleted.");
+      }
     } catch(e) { toast("⚠️ Deleted locally but DB unreachable.", "danger"); }
   };
 
@@ -5059,7 +5064,12 @@ function MasterStaff({ users, setUsers, toast, addLog }) {
       const {error} = await supabase.from("app_state")
         .upsert({key:"users",value:payload,updated_at:new Date().toISOString()},{onConflict:"key"});
       if(error) toast("⚠️ Unlocked locally but DB save failed: "+error.message,"danger");
-      else toast("🔓 "+u.name+"'s account has been unlocked.");
+      else {
+        sbCancelPending("users");
+        const { data: fresh4 } = await supabase.from("app_state").select("value").eq("key","users").single();
+        if(fresh4?.value) setUsers(fresh4.value);
+        toast("🔓 "+u.name+"'s account has been unlocked.");
+      }
     } catch(e){ toast("🔓 "+u.name+" unlocked (offline)."); }
   };
 
@@ -5093,6 +5103,10 @@ function MasterStaff({ users, setUsers, toast, addLog }) {
                         .upsert({key:"users",value:payload,updated_at:new Date().toISOString()},{onConflict:"key"});
                       if(error) toast("⚠️ Approved locally but DB save failed: "+error.message,"danger");
                       else {
+                        sbCancelPending("users");
+                        // Reload fresh from DB so local state matches exactly what was saved
+                        const { data: fresh } = await supabase.from("app_state").select("value").eq("key","users").single();
+                        if(fresh?.value) setUsers(fresh.value);
                         toast("✅ "+u.name+" approved. They can now sign in.");
                         sendGenericEmail({
                           to_email: u.email,
@@ -5113,6 +5127,9 @@ function MasterStaff({ users, setUsers, toast, addLog }) {
                       const payload = updated.map(x=>({...x,photo:null,signatureImage:null}));
                       await supabase.from("app_state")
                         .upsert({key:"users",value:payload,updated_at:new Date().toISOString()},{onConflict:"key"});
+                      sbCancelPending("users");
+                      const { data: fresh2 } = await supabase.from("app_state").select("value").eq("key","users").single();
+                      if(fresh2?.value) setUsers(fresh2.value);
                       toast("🗑️ "+u.name+" rejected and removed.");
                       sendGenericEmail({
                         to_email: u.email,
@@ -5668,6 +5685,12 @@ function _exportArchiveExcel(oldAttendance, oldSundayReports) {
 
 const _archivedKeys = new Set();
 
+
+// Cancel any pending debounced save for a key — call after every direct DB write
+function sbCancelPending(key) {
+  clearTimeout(_sbTimers[key]);
+  delete _sbTimers[key];
+}
 function sbSave(key, value) {
   clearTimeout(_sbTimers[key]);
   _sbTimers[key] = setTimeout(async () => {
