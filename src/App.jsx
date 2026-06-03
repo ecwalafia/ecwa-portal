@@ -1205,16 +1205,25 @@ function FinanceMod({ user, users, requests, setRequests, toast, openRecordId, o
     if(validItems.length===0||!reqDate){toast("Please add at least one item with description and cost.","danger");return;}
     const id="REQ-"+Date.now();
     const purposeText=validItems.map((i,n)=>`${n+1}. ${i.desc} (x${i.qty}) = ${money(itemTotal(i))}`).join("\n");
-    const buildRecord=(attachment)=>{
-      setRequests(r=>[...r,{
+    const buildRecord=async (attachment)=>{
+      const newRecord = {
         id, requester:user.name, requesterRole:roleDisplay(user.role), requesterEmail:user.email,
         date:reqDate, purpose:reqNote.trim()||"See items below",
         items:validItems, amount:grandTotal,
         amountWords:numberToWords(grandTotal),
         status:"pending_secretary", signatures:{}, comments:{},
         attachment,
-      }]);
-      toast("✅ Request submitted!");setForm(false);resetForm();
+      };
+      const newReqs = await new Promise(resolve => {
+        setRequests(r => { const next=[...r, newRecord]; resolve(next); return next; });
+      });
+      setForm(false); resetForm();
+      try {
+        const { error } = await supabase.from("app_state")
+          .upsert({ key:"requests", value:newReqs, updated_at:new Date().toISOString() }, { onConflict:"key" });
+        if(error) toast("⚠️ Submitted locally but DB sync failed: "+error.message,"danger");
+        else { sbCancelPending("requests"); toast("✅ Request submitted!"); }
+      } catch(e) { toast("⚠️ Submitted locally but DB unreachable.","danger"); }
     };
     if(reqAttach){
       const rd=new FileReader();
@@ -1223,39 +1232,50 @@ function FinanceMod({ user, users, requests, setRequests, toast, openRecordId, o
     } else { buildRecord(null); }
   };
 
-  const act=(id,action,sig,note)=>{
-    setRequests(rs=>rs.map(r=>{
-      if(r.id!==id)return r;
-      const actKey=user.isMaster===true
-        ?({"pending_secretary":"secretary","pending_finance":"finance","pending_auditor":"auditor","pending_chairman":"chairman"}[r.status]||"chairman")
-        :["secretary","ads","conf_secretary"].includes(user.role)?"secretary":user.role==="accountant"?"finance":user.role;
-      const s2={...r.signatures,[actKey]:sig},c2={...r.comments,[actKey]:note||""};
-      if(action==="reject"){
-        toast("Request rejected.","danger");
-        sendGenericEmail({
-          to_name: r.requester,
-          to_email: r.requesterEmail,
-          email_subject: "Your Fund Request Has Been Rejected — ECWA Lafia DCC",
-          email_body: `Your fund request of ₦${Number(r.amount).toLocaleString()} for "${r.purpose}" has been rejected by ${user.name} (${roleDisplay(user.role)}).\n\n${note?`Note: ${note}\n\n`:""}Please contact Admin & Personnel for further guidance.`,
+  const act=async (id,action,sig,note)=>{
+    const newReqs = await new Promise(resolve => {
+      setRequests(rs => {
+        const next = rs.map(r=>{
+          if(r.id!==id)return r;
+          const actKey=user.isMaster===true
+            ?({"pending_secretary":"secretary","pending_finance":"finance","pending_auditor":"auditor","pending_chairman":"chairman"}[r.status]||"chairman")
+            :["secretary","ads","conf_secretary"].includes(user.role)?"secretary":user.role==="accountant"?"finance":user.role;
+          const s2={...r.signatures,[actKey]:sig},c2={...r.comments,[actKey]:note||""};
+          if(action==="reject"){
+            sendGenericEmail({
+              to_name: r.requester,
+              to_email: r.requesterEmail,
+              email_subject: "Your Fund Request Has Been Rejected — ECWA Lafia DCC",
+              email_body: `Your fund request of ₦${Number(r.amount).toLocaleString()} for "${r.purpose}" has been rejected by ${user.name} (${roleDisplay(user.role)}).\n\n${note?`Note: ${note}\n\n`:""}Please contact Admin & Personnel for further guidance.`,
+            });
+            return{...r,status:"rejected",signatures:s2,comments:c2};
+          }
+          if(["chairman","vice_chairman"].includes(user.role)||user.isMaster===true){
+            sendGenericEmail({
+              to_name: r.requester,
+              to_email: r.requesterEmail,
+              email_subject: "Your Fund Request Has Been Approved — ECWA Lafia DCC",
+              email_body: `Great news! Your fund request has been fully approved.\n\nAmount: ₦${Number(r.amount).toLocaleString()}\nPurpose: ${r.purpose}\nDate: ${fdate(r.date)}\n\nPlease contact the Finance department for disbursement.\n\nSign in at: https://ecwa-portal.onrender.com`,
+            });
+            return{...r,status:"approved",signatures:s2,comments:c2};
+          }
+          const nextStatus = FNEXT[actKey];
+          if(!nextStatus){toast("Approval error — contact admin.","danger");return r;}
+          return{...r,status:nextStatus,signatures:s2,comments:c2};
         });
-        return{...r,status:"rejected",signatures:s2,comments:c2};
-      }
-      // Only chairman/vice_chairman/master can fully approve — everyone else goes to next stage
-      if(["chairman","vice_chairman"].includes(user.role)||user.isMaster===true){
-        toast("🎉 Fully approved!");
-        sendGenericEmail({
-          to_name: r.requester,
-          to_email: r.requesterEmail,
-          email_subject: "Your Fund Request Has Been Approved — ECWA Lafia DCC",
-          email_body: `Great news! Your fund request has been fully approved.\n\nAmount: ₦${Number(r.amount).toLocaleString()}\nPurpose: ${r.purpose}\nDate: ${fdate(r.date)}\n\nPlease contact the Finance department for disbursement.\n\nSign in at: https://ecwa-portal.onrender.com`,
-        });
-        return{...r,status:"approved",signatures:s2,comments:c2};
-      }
-      const nextStatus = FNEXT[actKey];
-      if(!nextStatus){toast("Approval error — contact admin.","danger");return r;}
-      toast("✅ Forwarded to next stage.");
-      return{...r,status:nextStatus,signatures:s2,comments:c2};
-    }));
+        resolve(next); return next;
+      });
+    });
+    const acted = newReqs.find(r=>r.id===id);
+    if(acted?.status==="rejected") toast("Request rejected.","danger");
+    else if(acted?.status==="approved") toast("🎉 Fully approved!");
+    else toast("✅ Forwarded to next stage.");
+    try {
+      const { error } = await supabase.from("app_state")
+        .upsert({ key:"requests", value:newReqs, updated_at:new Date().toISOString() }, { onConflict:"key" });
+      if(error) toast("⚠️ Action saved locally but DB sync failed: "+error.message,"danger");
+      else sbCancelPending("requests");
+    } catch(e) { toast("⚠️ Action saved locally but DB unreachable.","danger"); }
   };
 
   return(
@@ -1674,41 +1694,52 @@ function LeaveMod({ user, users, leaves, setLeaves, toast, openRecordId, onRecor
     }));
   };
 
-  const act=(id,action,note,stage,sig,allowanceAmt)=>{
-    setLeaves(ls=>ls.map(l=>{
-      if(l.id!==id)return l;
-      const approverName = user.name;
-      const approverPos = roleDisplay(user.role);
-      const newApproval = {name:approverName,position:approverPos,date:today(),note:note||"",sig:sig||null};
-      const newApprovals = [...(l.approvals||[]),newApproval];
-      if(action==="reject"){
-        toast("Leave request rejected.","danger");
-        sendGenericEmail({
-          to_name: l.requester,
-          to_email: l.requesterEmail,
-          email_subject: "Your Leave Request Has Been Rejected — ECWA Lafia DCC",
-          email_body: `Your leave request (${l.type}, ${fdate(l.startDate)} – ${fdate(l.endDate)}) has been rejected by ${approverName} (${approverPos}).\n\n${note?`Note: ${note}\n\n`:""}Please contact Admin & Personnel for further guidance.`,
+  const act=async (id,action,note,stage,sig,allowanceAmt)=>{
+    const newLeaves = await new Promise(resolve => {
+      setLeaves(ls => {
+        const next = ls.map(l=>{
+          if(l.id!==id)return l;
+          const approverName = user.name;
+          const approverPos = roleDisplay(user.role);
+          const newApproval = {name:approverName,position:approverPos,date:today(),note:note||"",sig:sig||null};
+          const newApprovals = [...(l.approvals||[]),newApproval];
+          if(action==="reject"){
+            sendGenericEmail({
+              to_name: l.requester,
+              to_email: l.requesterEmail,
+              email_subject: "Your Leave Request Has Been Rejected — ECWA Lafia DCC",
+              email_body: `Your leave request (${l.type}, ${fdate(l.startDate)} – ${fdate(l.endDate)}) has been rejected by ${approverName} (${approverPos}).\n\n${note?`Note: ${note}\n\n`:""}Please contact Admin & Personnel for further guidance.`,
+            });
+            return{...l,status:"rejected",approvals:newApprovals};
+          }
+          const nextStatus = stage==="dept"?"pending_admin":stage==="admin"?"pending_finance":stage==="finance"?"pending_auditor":stage==="auditor"?"pending_chairman":"approved";
+          const updates = {status:nextStatus,approvals:newApprovals};
+          if(allowanceAmt) updates.allowance=parseFloat(allowanceAmt);
+          if(nextStatus==="approved"){
+            sendGenericEmail({
+              to_name: l.requester,
+              to_email: l.requesterEmail,
+              email_subject: "Your Leave Request Has Been Approved — ECWA Lafia DCC",
+              email_body: `Congratulations! Your leave request has been fully approved.\n\nLeave Type: ${l.type}\nFrom: ${fdate(l.startDate)}\nTo: ${fdate(l.endDate)}\nDuration: ${l.days} day(s)\n${updates.allowance?`Leave Grant: ₦${Number(updates.allowance).toLocaleString()}\n`:""}\nYour leave approval letter is available on the portal.\n\nSign in at: https://ecwa-portal.onrender.com`,
+            });
+          }
+          return{...l,...updates};
         });
-        return{...l,status:"rejected",approvals:newApprovals};
-      }
-      // advance — dept→admin→finance→auditor→chairman→approved
-      const nextStatus = stage==="dept"?"pending_admin":stage==="admin"?"pending_finance":stage==="finance"?"pending_auditor":stage==="auditor"?"pending_chairman":"approved";
-      const updates = {status:nextStatus,approvals:newApprovals};
-      if(allowanceAmt) updates.allowance=parseFloat(allowanceAmt);
-      if(nextStatus==="approved"){
-        toast("🎉 Leave approved! Letter ready for download.");
-        sendGenericEmail({
-          to_name: l.requester,
-          to_email: l.requesterEmail,
-          email_subject: "Your Leave Request Has Been Approved — ECWA Lafia DCC",
-          email_body: `Congratulations! Your leave request has been fully approved.\n\nLeave Type: ${l.type}\nFrom: ${fdate(l.startDate)}\nTo: ${fdate(l.endDate)}\nDuration: ${l.days} day(s)\n${updates.allowance?`Leave Grant: ₦${Number(updates.allowance).toLocaleString()}\n`:""}\nYour leave approval letter is available on the portal.\n\nSign in at: https://ecwa-portal.onrender.com`,
-        });
-      } else {
-        toast("✅ Forwarded to next stage.");
-      }
-      return{...l,...updates};
-    }));
+        resolve(next); return next;
+      });
+    });
     setSel(null);
+    try {
+      const { error } = await supabase.from("app_state")
+        .upsert({ key:"leaves", value:newLeaves, updated_at:new Date().toISOString() }, { onConflict:"key" });
+      if(error) toast("⚠️ Action saved locally but DB sync failed: "+error.message,"danger");
+      else {
+        sbCancelPending("leaves");
+        if(action==="reject") toast("Leave request rejected.","danger");
+        else if(newLeaves.find(l=>l.id===id)?.status==="approved") toast("🎉 Leave approved! Letter ready for download.");
+        else toast("✅ Forwarded to next stage.");
+      }
+    } catch(e) { toast("⚠️ Action saved locally but DB unreachable.","danger"); }
   };
 
   const displayLeaves = user.role==="pastor"? leaves.filter(l=>l.requesterEmail===user.email)
@@ -1837,10 +1868,19 @@ function SundayMod({ user, users, sundayReports, setSundayReports, toast }) {
     };
   };
 
-  const submitReport=(f)=>{
+  const submitReport=async (f)=>{
     const id="SR-"+Date.now();
-    setSundayReports(r=>[...r,{...f,id,pastorId:user.id,pastorName:user.name,pastorEmail:user.email,lcc:user.lcc,lc_ph:user.lc_ph,submitted:true,appeal:null}]);
-    toast("✅ Sunday report submitted.");setForm(false);
+    const newReport = {...f,id,pastorId:user.id,pastorName:user.name,pastorEmail:user.email,lcc:user.lcc,lc_ph:user.lc_ph,submitted:true,appeal:null};
+    const newReports = await new Promise(resolve => {
+      setSundayReports(r => { const next=[...r,newReport]; resolve(next); return next; });
+    });
+    setForm(false);
+    try {
+      const { error } = await supabase.from("app_state")
+        .upsert({ key:"sundayReports", value:newReports, updated_at:new Date().toISOString() }, { onConflict:"key" });
+      if(error) toast("⚠️ Report saved locally but DB sync failed: "+error.message,"danger");
+      else { sbCancelPending("sundayReports"); toast("✅ Sunday report submitted."); }
+    } catch(e) { toast("⚠️ Report saved locally but DB unreachable.","danger"); }
   };
 
   return(
@@ -2088,14 +2128,19 @@ function SundayReportDetail({ report, user, users, setSundayReports, toast, onCl
   const isAdmin=["secretary","ads","conf_secretary","master"].includes(user.role);
   const isPastor=user.role==="pastor";
 
-  const saveEdit=()=>{
-    setSundayReports(rs=>rs.map(r=>r.id===report.id?{...r,
-      collections:editCols,
-      attendance:editAtt,
-      totalGross:Object.values(editCols).reduce((s,v)=>s+(parseFloat(v)||0),0)+(report.optionalItems||[]).reduce((s,i)=>s+(parseFloat(i.amount)||0),0),
-      submitted:true,
-      appeal:r.appeal?{...r.appeal,status:"resolved",resolvedBy:user.name,resolvedDate:new Date().toISOString().slice(0,10)}:r.appeal
-    }:r));
+  const saveEdit=async ()=>{
+    const newReports = await new Promise(resolve => {
+      setSundayReports(rs => {
+        const next = rs.map(r=>r.id===report.id?{...r,
+          collections:editCols,
+          attendance:editAtt,
+          totalGross:Object.values(editCols).reduce((s,v)=>s+(parseFloat(v)||0),0)+(report.optionalItems||[]).reduce((s,i)=>s+(parseFloat(i.amount)||0),0),
+          submitted:true,
+          appeal:r.appeal?{...r.appeal,status:"resolved",resolvedBy:user.name,resolvedDate:new Date().toISOString().slice(0,10)}:r.appeal
+        }:r);
+        resolve(next); return next;
+      });
+    });
     if(isPastor){
       const admins=users.filter(u=>["secretary","ads","conf_secretary"].includes(u.role));
       admins.forEach(a=>sendGenericEmail({to_name:a.name,to_email:a.email,
@@ -2105,33 +2150,65 @@ function SundayReportDetail({ report, user, users, setSundayReports, toast, onCl
 Please log in to review.
 https://ecwa-portal.onrender.com`}));
     }
-    toast("✅ Report updated successfully.");setEditMode(false);onClose();
+    setEditMode(false); onClose();
+    try {
+      const { error } = await supabase.from("app_state")
+        .upsert({ key:"sundayReports", value:newReports, updated_at:new Date().toISOString() }, { onConflict:"key" });
+      if(error) toast("⚠️ Updated locally but DB sync failed: "+error.message,"danger");
+      else { sbCancelPending("sundayReports"); toast("✅ Report updated successfully."); }
+    } catch(e) { toast("⚠️ Updated locally but DB unreachable.","danger"); }
   };
 
-  const submitAppeal=()=>{
-    setSundayReports(rs=>rs.map(r=>r.id===report.id?{...r,appeal:{text:appealText,date:today(),status:"pending",pastorEmail:report.pastorEmail||user.email,pastorName:report.pastorName}}:r));
+  const submitAppeal=async ()=>{
+    const newReports = await new Promise(resolve => {
+      setSundayReports(rs => {
+        const next = rs.map(r=>r.id===report.id?{...r,appeal:{text:appealText,date:today(),status:"pending",pastorEmail:report.pastorEmail||user.email,pastorName:report.pastorName}}:r);
+        resolve(next); return next;
+      });
+    });
     const admins=users.filter(u=>["secretary","ads","conf_secretary"].includes(u.role));
     admins.forEach(a=>sendGenericEmail({to_name:a.name,to_email:a.email,
       email_subject:`Sunday Report Appeal — ${report.pastorName} (${fdate(report.date)})`,
       email_body:`An appeal was submitted for a Sunday report.\n\nPastor: ${report.pastorName}\nChurch: ${report.lc_ph}\nDate: ${fdate(report.date)}\n\nAppeal:\n${appealText}\n\nPlease log in to review.\nhttps://ecwa-portal.onrender.com`}));
-    toast("Appeal submitted. Admin has been notified.");setShowAppeal(false);
+    setShowAppeal(false);
+    try {
+      const { error } = await supabase.from("app_state")
+        .upsert({ key:"sundayReports", value:newReports, updated_at:new Date().toISOString() }, { onConflict:"key" });
+      if(error) toast("⚠️ Appeal saved locally but DB sync failed: "+error.message,"danger");
+      else { sbCancelPending("sundayReports"); toast("Appeal submitted. Admin has been notified."); }
+    } catch(e) { toast("⚠️ Appeal saved locally but DB unreachable.","danger"); }
   };
 
-  const handleAppealDecision=(action)=>{
+  const handleAppealDecision=async (action)=>{
+    const newReports = await new Promise(resolve => {
+      setSundayReports(rs => {
+        const next = rs.map(r=>{
+          if(r.id!==report.id) return r;
+          if(action==="resubmit") return {...r,submitted:false,appeal:{...r.appeal,status:"resubmit",adminNote:appealNote,adminBy:user.name,adminDate:today()}};
+          return {...r,appeal:{...r.appeal,status:"accepted",adminNote:appealNote,adminBy:user.name,adminDate:today()}};
+        });
+        resolve(next); return next;
+      });
+    });
     if(action==="resubmit"){
-      setSundayReports(rs=>rs.map(r=>r.id===report.id?{...r,submitted:false,appeal:{...r.appeal,status:"resubmit",adminNote:appealNote,adminBy:user.name,adminDate:today()}}:r));
       sendGenericEmail({to_name:report.pastorName,to_email:report.appeal?.pastorEmail||"",
         email_subject:"Sunday Report Returned for Correction — ECWA Lafia DCC",
         email_body:`Your Sunday report for ${fdate(report.date)} has been returned for correction.\n\nAdmin Note: ${appealNote}\n\nPlease log in and resubmit.\nhttps://ecwa-portal.onrender.com`});
-      toast("Report returned to pastor for correction.");
     } else {
-      setSundayReports(rs=>rs.map(r=>r.id===report.id?{...r,appeal:{...r.appeal,status:"accepted",adminNote:appealNote,adminBy:user.name,adminDate:today()}}:r));
       sendGenericEmail({to_name:report.pastorName,to_email:report.appeal?.pastorEmail||"",
         email_subject:"Sunday Report Appeal Accepted — ECWA Lafia DCC",
         email_body:`Your appeal for the Sunday report dated ${fdate(report.date)} has been accepted.\n\nAdmin Note: ${appealNote||"No additional note."}\n\nECWA Lafia DCC`});
-      toast("Appeal accepted.");
     }
-    setAppealAction(null);setAppealNote("");onClose();
+    setAppealAction(null); setAppealNote(""); onClose();
+    try {
+      const { error } = await supabase.from("app_state")
+        .upsert({ key:"sundayReports", value:newReports, updated_at:new Date().toISOString() }, { onConflict:"key" });
+      if(error) toast("⚠️ Decision saved locally but DB sync failed: "+error.message,"danger");
+      else {
+        sbCancelPending("sundayReports");
+        toast(action==="resubmit"?"Report returned to pastor for correction.":"Appeal accepted.");
+      }
+    } catch(e) { toast("⚠️ Decision saved locally but DB unreachable.","danger"); }
   };
 
   return(
@@ -2674,18 +2751,36 @@ function PersonnelMod({ user, users, setUsers, lccs, toast }) {
   const canEdit=s=>["personnel","secretary","ads","conf_secretary","master"].includes(user.role)||s.id===user.id;
   const canEditDetails=s=>["personnel","secretary","ads","master"].includes(user.role)||(["conf_secretary","master"].includes(user.role)&&s.id===user.id);
 
-  const upd=(id,u2)=>{setUsers(us=>us.map(u=>u.id===id?{...u,...u2}:u));setSel(s=>s?{...s,...u2}:s);toast("✅ Profile updated.");};
+  const upd=async (id,u2)=>{
+    const newUsers = users.map(u=>u.id===id?{...u,...u2}:u);
+    setUsers(newUsers);
+    setSel(s=>s?{...s,...u2}:s);
+    try {
+      const payload = newUsers.map(u=>({...u,photo:null,signatureImage:null}));
+      const { error } = await supabase.from("app_state")
+        .upsert({ key:"users", value:payload, updated_at:new Date().toISOString() }, { onConflict:"key" });
+      if(error) toast("⚠️ Saved locally but DB sync failed: "+error.message,"danger");
+      else { sbCancelPending("users"); toast("✅ Profile updated."); }
+    } catch(e) { toast("⚠️ Saved locally but DB unreachable.","danger"); }
+  };
   const addUser  = u => setUsers(us=>[...us,u]);
   const getUsers = () => { let r; setUsers(us=>{r=us;return us;}); return r||[]; };
   const updateUser = (id,u2) => setUsers(us=>us.map(u=>u.id===id?{...u,...u2}:u));
-  const transfer=(id,toLcc,toChurch,note)=>{
-    setUsers(us=>us.map(u=>{
+  const transfer=async (id,toLcc,toChurch,note)=>{
+    const newUsers = users.map(u=>{
       if(u.id!==id)return u;
       const hist=[...(u.transferHistory||[]),{date:today(),fromLcc:u.lcc,fromChurch:u.lc_ph,toLcc,toChurch,note,by:user.name}];
       return{...u,lcc:toLcc,lc_ph:toChurch,transferHistory:hist};
-    }));
+    });
+    setUsers(newUsers);
     setSel(s=>s?{...s,lcc:toLcc,lc_ph:toChurch}:s);
-    toast("✅ Pastor transferred successfully.");
+    try {
+      const payload = newUsers.map(u=>({...u,photo:null,signatureImage:null}));
+      const { error } = await supabase.from("app_state")
+        .upsert({ key:"users", value:payload, updated_at:new Date().toISOString() }, { onConflict:"key" });
+      if(error) toast("⚠️ Transfer saved locally but DB sync failed: "+error.message,"danger");
+      else { sbCancelPending("users"); toast("✅ Pastor transferred successfully."); }
+    } catch(e) { toast("⚠️ Transfer saved locally but DB unreachable.","danger"); }
   };
 
   // My profile view for basic staff / pastors
@@ -2947,11 +3042,20 @@ function AnnouncementsMod({ user, announcements, setAnnouncements, toast }) {
   });
 
   const markRead = id => setAnnouncements(as=>as.map(a=>a.id===id&&!a.readBy.includes(user.email)?{...a,readBy:[...a.readBy,user.email]}:a));
-  const post = () => {
+  const post = async () => {
     if(!f.title||!f.body) return;
     const id="ANN-"+String(announcements.length+1).padStart(3,"0");
-    setAnnouncements(a=>[{id,title:f.title,body:f.body,audience:f.audience,postedBy:user.name,postedByRole:roleDisplay(user.role),date:today(),readBy:[]}, ...a]);
-    toast("✅ Announcement posted.");setForm(false);setF({title:"",body:"",audience:"all"});
+    const newAnn = {id,title:f.title,body:f.body,audience:f.audience,postedBy:user.name,postedByRole:roleDisplay(user.role),date:today(),readBy:[]};
+    const newAnns = await new Promise(resolve => {
+      setAnnouncements(a => { const next=[newAnn,...a]; resolve(next); return next; });
+    });
+    setForm(false); setF({title:"",body:"",audience:"all"});
+    try {
+      const { error } = await supabase.from("app_state")
+        .upsert({ key:"announcements", value:newAnns, updated_at:new Date().toISOString() }, { onConflict:"key" });
+      if(error) toast("⚠️ Posted locally but DB sync failed: "+error.message,"danger");
+      else { sbCancelPending("announcements"); toast("✅ Announcement posted."); }
+    } catch(e) { toast("⚠️ Posted locally but DB unreachable.","danger"); }
   };
 
   return(
@@ -3036,28 +3140,49 @@ function AttendanceMod({ user, users, attendance, setAttendance, leaves, toast }
   // Check if on leave today
   const onLeaveToday = leaves.find(l=>l.requesterEmail===user.email&&l.status==="approved"&&l.startDate<=todayStr&&l.endDate>=todayStr);
 
-  const clockIn = () => {
+  const clockIn = async () => {
     const id="ATT-"+String(attendance.length+1).padStart(3,"0");
-    setAttendance(a=>[...a,{id,userId:user.id,userEmail:user.email,userName:user.name,dept:user.dept,date:todayStr,clockIn:timeStr,clockOut:null,dailyReport:null,reportReadBy:[],adminClosed:false,adminNote:""}]);
-    toast("✅ Clocked in at "+timeStr);
+    const newRecord = {id,userId:user.id,userEmail:user.email,userName:user.name,dept:user.dept,date:todayStr,clockIn:timeStr,clockOut:null,dailyReport:null,reportReadBy:[],adminClosed:false,adminNote:""};
+    const newAtt = await new Promise(resolve => {
+      setAttendance(a => { const next=[...a,newRecord]; resolve(next); return next; });
+    });
+    try {
+      const { error } = await supabase.from("app_state")
+        .upsert({ key:"attendance", value:newAtt, updated_at:new Date().toISOString() }, { onConflict:"key" });
+      if(error) toast("⚠️ Clock-in saved locally but DB sync failed.","danger");
+      else { sbCancelPending("attendance"); toast("✅ Clocked in at "+timeStr); }
+    } catch(e) { toast("⚠️ Clock-in saved locally but DB unreachable.","danger"); }
   };
 
-  const clockOut = () => {
-    // Chairman, Vice Chairman and Secretary clock out directly — no daily report required
+  const clockOut = async () => {
     if(["chairman","vice_chairman","secretary","ads"].includes(user.role)){
       const timeStr2=new Date().toTimeString().slice(0,5);
-      setAttendance(a=>a.map(r=>r.userId===user.id&&r.date===todayStr?{...r,clockOut:timeStr2}:r));
-      toast("✅ Clocked out at "+timeStr2);
+      const newAtt = await new Promise(resolve => {
+        setAttendance(a => { const next=a.map(r=>r.userId===user.id&&r.date===todayStr?{...r,clockOut:timeStr2}:r); resolve(next); return next; });
+      });
+      try {
+        const { error } = await supabase.from("app_state")
+          .upsert({ key:"attendance", value:newAtt, updated_at:new Date().toISOString() }, { onConflict:"key" });
+        if(error) toast("⚠️ Clock-out saved locally but DB sync failed.","danger");
+        else { sbCancelPending("attendance"); toast("✅ Clocked out at "+timeStr2); }
+      } catch(e) { toast("⚠️ Clock-out saved locally but DB unreachable.","danger"); }
     } else {
       setReportForm(true);
     }
   };
 
-  const submitClockOut = () => {
+  const submitClockOut = async () => {
     if(!rep.achievements.trim()||!rep.challenges.trim()){toast("Please fill in Achievements and Challenges before submitting.","danger");return;}
-    setAttendance(a=>a.map(r=>r.userId===user.id&&r.date===todayStr?{...r,clockOut:timeStr,dailyReport:rep}:r));
-    toast("✅ Clocked out at "+timeStr+". Daily report submitted.");
+    const newAtt = await new Promise(resolve => {
+      setAttendance(a => { const next=a.map(r=>r.userId===user.id&&r.date===todayStr?{...r,clockOut:timeStr,dailyReport:rep}:r); resolve(next); return next; });
+    });
     setReportForm(false); setRep({achievements:"",challenges:"",tomorrowPlan:""});
+    try {
+      const { error } = await supabase.from("app_state")
+        .upsert({ key:"attendance", value:newAtt, updated_at:new Date().toISOString() }, { onConflict:"key" });
+      if(error) toast("⚠️ Clock-out saved locally but DB sync failed.","danger");
+      else { sbCancelPending("attendance"); toast("✅ Clocked out at "+timeStr+". Daily report submitted."); }
+    } catch(e) { toast("⚠️ Clock-out saved locally but DB unreachable.","danger"); }
   };
 
   // Weekly grid — get dates for current week + offset
@@ -3084,9 +3209,17 @@ function AttendanceMod({ user, users, attendance, setAttendance, leaves, toast }
     ? users.filter(u=>u.category==="office"&&u.id!==user.id)
     : [];
 
-  const doAdminClose = () => {
-    setAttendance(a=>a.map(r=>r.id===adminClose.id?{...r,clockOut:timeStr,adminClosed:true,adminNote}:r));
-    toast("Record closed with admin note.");setAdminClose(null);setAdminNote("");
+  const doAdminClose = async () => {
+    const newAtt = await new Promise(resolve => {
+      setAttendance(a => { const next=a.map(r=>r.id===adminClose.id?{...r,clockOut:timeStr,adminClosed:true,adminNote}:r); resolve(next); return next; });
+    });
+    setAdminClose(null); setAdminNote("");
+    try {
+      const { error } = await supabase.from("app_state")
+        .upsert({ key:"attendance", value:newAtt, updated_at:new Date().toISOString() }, { onConflict:"key" });
+      if(error) toast("⚠️ Closed locally but DB sync failed.","danger");
+      else { sbCancelPending("attendance"); toast("Record closed with admin note."); }
+    } catch(e) { toast("⚠️ Closed locally but DB unreachable.","danger"); }
   };
 
   // My history
@@ -3376,7 +3509,7 @@ function AttRecordDetail({ record, user, canRespond, onClose, onAck, onComment }
 // ── Password Reset Flow ────────────────────────────────────────────────────────
 function ForgotPassword({ users, pwdReqs, setPwdReqs, onBack }) {
   const [email,setEmail]=useState(""); const [sent,setSent]=useState(false); const [er,setEr]=useState("");
-  const submit=()=>{
+  const submit=async ()=>{
     setEr("");
     if(!email){setEr("Please enter your email.");return;}
     // Honeypot — if someone tries master email on forgot password, trap silently
@@ -3387,11 +3520,17 @@ function ForgotPassword({ users, pwdReqs, setPwdReqs, onBack }) {
     const u=users.find(u=>u.email.toLowerCase()===email.toLowerCase());
     if(!u){setEr("No account found with this email.");return;}
     if(pwdReqs.find(r=>r.email.toLowerCase()===email.toLowerCase()&&r.status==="pending")){setEr("A reset request is already pending for this email.");return;}
-    setPwdReqs(r=>[...r,{id:"PWD-"+String(r.length+1).padStart(3,"0"),email:u.email,name:u.name,requestDate:today(),status:"pending",newPassword:"",resolvedBy:"",resolvedDate:""}]);
+    const newReqs = [...pwdReqs, {id:"PWD-"+String(pwdReqs.length+1).padStart(3,"0"),email:u.email,name:u.name,requestDate:today(),status:"pending",newPassword:"",resolvedBy:"",resolvedDate:""}];
+    setPwdReqs(newReqs);
     const admins=users.filter(a=>["secretary","ads","conf_secretary","personnel"].includes(a.role));
     admins.forEach(a=>sendGenericEmail({to_name:a.name,to_email:a.email,
       email_subject:"Password Reset Request — ECWA Lafia DCC",
       email_body:`${u.name} (${u.email}) has submitted a password reset request.\n\nPlease log in to process this request.\nhttps://ecwa-portal.onrender.com`}));
+    try {
+      await supabase.from("app_state")
+        .upsert({ key:"pwdReqs", value:newReqs, updated_at:new Date().toISOString() }, { onConflict:"key" });
+      sbCancelPending("pwdReqs");
+    } catch(e) { console.error("pwdReqs save error:",e); }
     setSent(true);
   };
   if(sent)return(
@@ -3426,14 +3565,24 @@ function PwdResetManager({ pwdReqs, setPwdReqs, users, setUsers, toast }) {
   const resolve=async ()=>{
     if(!newPw||newPw.length<6){toast("Password must be at least 6 characters.","danger");return;}
     const hashedPw = await hashPassword(newPw);
-    setUsers(us=>us.map(u=>u.email.toLowerCase()===sel.email.toLowerCase()?{...u,password:hashedPw,mustChangePassword:true}:u));
-    setPwdReqs(rs=>rs.map(r=>r.id===sel.id?{...r,status:"resolved",newPassword:"[set]",resolvedDate:today()}:r));
+    const newUsers = users.map(u=>u.email.toLowerCase()===sel.email.toLowerCase()?{...u,password:hashedPw,mustChangePassword:true}:u);
+    const newPwdReqs = pwdReqs.map(r=>r.id===sel.id?{...r,status:"resolved",newPassword:"[set]",resolvedDate:today()}:r);
+    setUsers(newUsers);
+    setPwdReqs(newPwdReqs);
     sendGenericEmail({
       to_name: sel.name,
       to_email: sel.email,
       email_subject: "Your ECWA Lafia DCC Password Has Been Reset",
       email_body: `Your password has been reset by Admin.\n\nYour temporary password: ${newPw}\n\nPlease sign in and change your password immediately.\n\nSign in at: https://ecwa-portal.onrender.com`,
     });
+    try {
+      const usersPayload = newUsers.map(u=>({...u,photo:null,signatureImage:null}));
+      await Promise.all([
+        supabase.from("app_state").upsert({ key:"users", value:usersPayload, updated_at:new Date().toISOString() }, { onConflict:"key" }),
+        supabase.from("app_state").upsert({ key:"pwdReqs", value:newPwdReqs, updated_at:new Date().toISOString() }, { onConflict:"key" }),
+      ]);
+      sbCancelPending("users"); sbCancelPending("pwdReqs");
+    } catch(e) { console.error("PwdReset save error:",e); }
     toast("✅ Password reset. Email sent to "+sel.email);setSel(null);setNewPw("");
   };
   return(
@@ -3494,7 +3643,14 @@ function SignUp({ users, lccs, setLccs, onSignUp, onGo }) {
     if(cat==="pastor"&&f.lcc==="__new__"&&!f.newLcc){showErr("Please type the new LCC name.");return;}
     try {
       setSubmitting(true);
-      if(cat==="pastor"&&f.newLcc&&!lccs.includes(f.newLcc)){setLccs(l=>[...l,f.newLcc]);}
+      if(cat==="pastor"&&f.newLcc&&!lccs.includes(f.newLcc)){
+        const newLccs=[...lccs,f.newLcc];
+        setLccs(newLccs);
+        try {
+          await supabase.from("app_state").upsert({ key:"lccs", value:newLccs, updated_at:new Date().toISOString() }, { onConflict:"key" });
+          sbCancelPending("lccs");
+        } catch(e) { console.error("LCC save error during signup:",e); }
+      }
       const finalLcc=cat==="pastor"?(f.lcc==="__new__"?f.newLcc:f.lcc):undefined;
       const finalLcPh=cat==="pastor"?(f.lc_ph==="__other__"?f.newLcPh:f.lc_ph):undefined;
       const roleObj = getAllOfficeRoles().find(r=>r.title===f.jobTitle);
@@ -3917,6 +4073,15 @@ function MasterImpersonate({ users, requests, setRequests, leaves, setLeaves, su
   const finActKey      = u => ["secretary","ads","conf_secretary"].includes(u.role)?"secretary": u.role==="accountant"?"finance": u.role==="auditor"?"auditor": ["chairman","vice_chairman"].includes(u.role)?"chairman": null;
   const finPendingFor  = u => ({secretary:"pending_secretary",finance:"pending_finance",auditor:"pending_auditor",chairman:"pending_chairman"}[finActKey(u)]);
 
+  const dbSave = async (key, value) => {
+    try {
+      const { error } = await supabase.from("app_state")
+        .upsert({ key, value, updated_at:new Date().toISOString() }, { onConflict:"key" });
+      if(error) toast("⚠️ Saved locally but DB sync failed: "+error.message,"danger");
+      else sbCancelPending(key);
+    } catch(e) { toast("⚠️ Saved locally but DB unreachable.","danger"); }
+  };
+
   // ── Submit finance request (non-approver office staff) ──
   const submitFinance = async () => {
     const amount = parseFloat(form.amount)||0;
@@ -3927,31 +4092,39 @@ function MasterImpersonate({ users, requests, setRequests, leaves, setLeaves, su
       date:today(), purpose:form.purpose||"—", amount, amountWords:words,
       status:"pending_secretary", signatures:{}, comments:{}, items:[], reqNote:form.purpose||"",
     };
-    setRequests(rs=>[req,...rs]);
+    const newReqs = [req,...requests];
+    setRequests(newReqs);
     addLog("IMPERSONATE_FINANCE", `Submitted finance ₦${amount} as ${asUser.name}`);
     toast("✅ Finance request submitted as "+asUser.name);
     setAction(""); setForm({});
+    await dbSave("requests", newReqs);
   };
 
   // ── Approve / reject finance (approver office staff) ──
-  const actFinance = (req, action) => {
+  const actFinance = async (req, action) => {
     const key = finActKey(asUser);
     if(!key){toast("This role cannot approve finance","danger");return;}
-    setRequests(rs=>rs.map(r=>{
-      if(r.id!==req.id) return r;
-      const s2={...r.signatures,[key]:asUser.name};
-      const c2={...r.comments,[key]:note||""};
-      if(action==="reject") return{...r,status:"rejected",signatures:s2,comments:c2};
-      if(["chairman","vice_chairman"].includes(asUser.role)) return{...r,status:"approved",signatures:s2,comments:c2};
-      return{...r,status:FNEXT[key],signatures:s2,comments:c2};
-    }));
+    const newReqs = await new Promise(resolve => {
+      setRequests(rs => {
+        const next = rs.map(r=>{
+          if(r.id!==req.id) return r;
+          const s2={...r.signatures,[key]:asUser.name};
+          const c2={...r.comments,[key]:note||""};
+          if(action==="reject") return{...r,status:"rejected",signatures:s2,comments:c2};
+          if(["chairman","vice_chairman"].includes(asUser.role)) return{...r,status:"approved",signatures:s2,comments:c2};
+          return{...r,status:FNEXT[key],signatures:s2,comments:c2};
+        });
+        resolve(next); return next;
+      });
+    });
     addLog("IMPERSONATE_FIN_ACT",`${asUser.name} ${action} finance ${req.id}`);
     toast(`✅ Finance ${action==="reject"?"rejected":"forwarded/approved"} as ${asUser.name}`);
     setNote("");
+    await dbSave("requests", newReqs);
   };
 
   // ── Submit leave request ──
-  const submitLeave = () => {
+  const submitLeave = async () => {
     const id = "LV-"+Date.now();
     const start = form.startDate||today();
     const end   = form.endDate||today();
@@ -3962,32 +4135,40 @@ function MasterImpersonate({ users, requests, setRequests, leaves, setLeaves, su
       type:form.leaveType||"Annual Leave", startDate:start, endDate:end, reason:form.reason||"",
       days, date:today(), status:"pending_dept", signatures:{}, comments:{},
     };
-    setLeaves(ls=>[lv,...ls]);
+    const newLeaves = [lv,...leaves];
+    setLeaves(newLeaves);
     addLog("IMPERSONATE_LEAVE", `Submitted ${lv.type} leave as ${asUser.name}`);
     toast("✅ Leave submitted as "+asUser.name);
     setAction(""); setForm({});
+    await dbSave("leaves", newLeaves);
   };
 
   // ── Approve / reject leave (approver) ──
-  const actLeave = (lv, action) => {
+  const actLeave = async (lv, action) => {
     const stage = canActLeave(asUser, lv, users);
     if(!stage){toast("This role cannot act on this leave","danger");return;}
-    setLeaves(ls=>ls.map(l=>{
-      if(l.id!==lv.id) return l;
-      const s2={...l.signatures,[stage]:asUser.name};
-      const c2={...l.comments,[stage]:note||""};
-      if(action==="reject") return{...l,status:"rejected",signatures:s2,comments:c2};
-      const LNEXT={dept:"pending_admin",admin:"pending_finance",finance:"pending_auditor",auditor:"pending_chairman",chairman:"approved"};
-      const next = LNEXT[stage];
-      return{...l,status:next||"approved",signatures:s2,comments:c2};
-    }));
+    const newLeaves = await new Promise(resolve => {
+      setLeaves(ls => {
+        const next = ls.map(l=>{
+          if(l.id!==lv.id) return l;
+          const s2={...l.signatures,[stage]:asUser.name};
+          const c2={...l.comments,[stage]:note||""};
+          if(action==="reject") return{...l,status:"rejected",signatures:s2,comments:c2};
+          const LNEXT={dept:"pending_admin",admin:"pending_finance",finance:"pending_auditor",auditor:"pending_chairman",chairman:"approved"};
+          const next2 = LNEXT[stage];
+          return{...l,status:next2||"approved",signatures:s2,comments:c2};
+        });
+        resolve(next); return next;
+      });
+    });
     addLog("IMPERSONATE_LV_ACT",`${asUser.name} ${action} leave ${lv.id}`);
     toast(`✅ Leave ${action==="reject"?"rejected":"approved/forwarded"} as ${asUser.name}`);
     setNote("");
+    await dbSave("leaves", newLeaves);
   };
 
   // ── Submit Sunday report (pastor / LO) ──
-  const submitSunday = () => {
+  const submitSunday = async () => {
     const t = (parseFloat(form.tithe)||0)+(parseFloat(form.offering)||0)+(parseFloat(form.thanksgiving)||0)+(parseFloat(form.project)||0)+(parseFloat(form.welfare)||0)+(parseFloat(form.others)||0);
     const id = "SR-"+Date.now();
     const rpt = {
@@ -3998,17 +4179,25 @@ function MasterImpersonate({ users, requests, setRequests, leaves, setLeaves, su
       collections:{ tithe:parseFloat(form.tithe)||0, offering:parseFloat(form.offering)||0, thanksgiving:parseFloat(form.thanksgiving)||0, project:parseFloat(form.project)||0, welfare:parseFloat(form.welfare)||0, others:parseFloat(form.others)||0 },
       totalGross:t, remittanceDue:t*0.25, fullRemittance:false, optionalItems:[],
     };
-    setSundayReports(rs=>[rpt,...rs]);
+    const newReports = [rpt,...sundayReports];
+    setSundayReports(newReports);
     addLog("IMPERSONATE_SUNDAY", `Submitted Sunday report as ${asUser.name}`);
     toast("✅ Sunday report submitted as "+asUser.name);
     setAction(""); setForm({});
+    await dbSave("sundayReports", newReports);
   };
 
   // ── Resolve / change appeal on Sunday report ──
-  const actAppeal = (rpt, status, note) => {
-    setSundayReports(rs=>rs.map(r=>r.id===rpt.id?{...r,appeal:{...r.appeal,status,adminNote:note,adminBy:asUser.name,adminDate:today()}}:r));
+  const actAppeal = async (rpt, status, note) => {
+    const newReports = await new Promise(resolve => {
+      setSundayReports(rs => {
+        const next = rs.map(r=>r.id===rpt.id?{...r,appeal:{...r.appeal,status,adminNote:note,adminBy:asUser.name,adminDate:today()}}:r);
+        resolve(next); return next;
+      });
+    });
     addLog("IMPERSONATE_APPEAL",`${asUser.name} set appeal ${rpt.id} → ${status}`);
     toast(`✅ Appeal ${status} as ${asUser.name}`);
+    await dbSave("sundayReports", newReports);
   };
 
   // Pending items this person can act on
@@ -4212,30 +4401,51 @@ function MasterRecords({ requests, setRequests, leaves, setLeaves, sundayReports
   const FIN_STATUSES = ["pending_secretary","pending_finance","pending_auditor","pending_chairman","approved","rejected"];
   const LV_STATUSES  = ["pending_dept","pending_admin","pending_finance","pending_auditor","pending_chairman","approved","rejected"];
 
-  const forceFinStatus = (id, status) => {
-    setRequests(rs=>rs.map(r=>r.id===id?{...r,status}:r));
+  const dbSave = async (key, value) => {
+    try {
+      const { error } = await supabase.from("app_state")
+        .upsert({ key, value, updated_at:new Date().toISOString() }, { onConflict:"key" });
+      if(error) toast("⚠️ Saved locally but DB sync failed: "+error.message,"danger");
+      else sbCancelPending(key);
+    } catch(e) { toast("⚠️ Saved locally but DB unreachable.","danger"); }
+  };
+
+  const forceFinStatus = async (id, status) => {
+    const newReqs = requests.map(r=>r.id===id?{...r,status}:r);
+    setRequests(newReqs);
     addLog("FORCE_FIN_STATUS",`Finance ${id} → ${status}`);
     toast("✅ Status updated.");
+    await dbSave("requests", newReqs);
   };
-  const forceLvStatus = (id, status) => {
-    setLeaves(ls=>ls.map(l=>l.id===id?{...l,status}:l));
+  const forceLvStatus = async (id, status) => {
+    const newLeaves = leaves.map(l=>l.id===id?{...l,status}:l);
+    setLeaves(newLeaves);
     addLog("FORCE_LV_STATUS",`Leave ${id} → ${status}`);
     toast("✅ Status updated.");
+    await dbSave("leaves", newLeaves);
   };
-  const deleteRecord = (type, id) => {
-    if(type==="finance"){ const r=requests.find(x=>x.id===id); setRequests(rs=>rs.filter(x=>x.id!==id)); setDeleted(d=>[{type,data:r,deletedAt:today()},...d]); }
-    if(type==="leave"){   const r=leaves.find(x=>x.id===id);   setLeaves(ls=>ls.filter(x=>x.id!==id));   setDeleted(d=>[{type,data:r,deletedAt:today()},...d]); }
-    if(type==="sunday"){  const r=sundayReports.find(x=>x.id===id); setSundayReports(rs=>rs.filter(x=>x.id!==id)); setDeleted(d=>[{type,data:r,deletedAt:today()},...d]); }
+  const deleteRecord = async (type, id) => {
+    let newReqs = requests, newLeaves = leaves, newReports = sundayReports;
+    if(type==="finance"){ const r=requests.find(x=>x.id===id); newReqs=requests.filter(x=>x.id!==id); setRequests(newReqs); setDeleted(d=>[{type,data:r,deletedAt:today()},...d]); }
+    if(type==="leave"){   const r=leaves.find(x=>x.id===id); newLeaves=leaves.filter(x=>x.id!==id); setLeaves(newLeaves); setDeleted(d=>[{type,data:r,deletedAt:today()},...d]); }
+    if(type==="sunday"){  const r=sundayReports.find(x=>x.id===id); newReports=sundayReports.filter(x=>x.id!==id); setSundayReports(newReports); setDeleted(d=>[{type,data:r,deletedAt:today()},...d]); }
     addLog("DELETE_RECORD",`Deleted ${type} record ${id}`);
     toast("🗑️ Record deleted. Available in recycle bin.");
+    if(type==="finance") await dbSave("requests", newReqs);
+    if(type==="leave")   await dbSave("leaves", newLeaves);
+    if(type==="sunday")  await dbSave("sundayReports", newReports);
   };
-  const restoreRecord = (item) => {
-    if(item.type==="finance") setRequests(rs=>[item.data,...rs]);
-    if(item.type==="leave")   setLeaves(ls=>[item.data,...ls]);
-    if(item.type==="sunday")  setSundayReports(rs=>[item.data,...rs]);
+  const restoreRecord = async (item) => {
+    let newReqs = requests, newLeaves = leaves, newReports = sundayReports;
+    if(item.type==="finance"){ newReqs=[item.data,...requests]; setRequests(newReqs); }
+    if(item.type==="leave")  { newLeaves=[item.data,...leaves]; setLeaves(newLeaves); }
+    if(item.type==="sunday") { newReports=[item.data,...sundayReports]; setSundayReports(newReports); }
     setDeleted(d=>d.filter(x=>x.data.id!==item.data.id));
     addLog("RESTORE_RECORD",`Restored ${item.type} record ${item.data.id}`);
     toast("✅ Record restored.");
+    if(item.type==="finance") await dbSave("requests", newReqs);
+    if(item.type==="leave")   await dbSave("leaves", newLeaves);
+    if(item.type==="sunday")  await dbSave("sundayReports", newReports);
   };
 
   const tabStyle = (t) => ({padding:"8px 16px",border:"none",borderBottom:tab===t?"2px solid #c9a84c":"2px solid transparent",background:"none",color:tab===t?"#c9a84c":"rgba(255,255,255,0.5)",cursor:"pointer",fontSize:13,fontWeight:tab===t?700:400});
@@ -4297,13 +4507,13 @@ function MasterRecords({ requests, setRequests, leaves, setLeaves, sundayReports
               <button onClick={()=>setEditing({type:"sunday",data:{...r}})} style={{background:"rgba(201,168,76,0.2)",border:"1px solid rgba(201,168,76,0.4)",color:"#c9a84c",borderRadius:6,padding:"4px 10px",cursor:"pointer",fontSize:11}}>✏️ Edit</button>
               {r.appeal&&r.appeal.status==="pending"&&(
                 <>
-                  <button onClick={()=>{setSundayReports(rs=>rs.map(x=>x.id===r.id?{...x,appeal:{...x.appeal,status:"accepted",adminNote:"Accepted by master",adminBy:"Admin",adminDate:today()}}:x));addLog("APPEAL_ACCEPT",`Accepted appeal on ${r.id}`);toast("✅ Appeal accepted.");}} style={{background:"rgba(39,174,96,0.2)",border:"1px solid rgba(39,174,96,0.4)",color:"#27ae60",borderRadius:6,padding:"4px 10px",cursor:"pointer",fontSize:11}}>✅ Accept</button>
-                  <button onClick={()=>{setSundayReports(rs=>rs.map(x=>x.id===r.id?{...x,appeal:{...x.appeal,status:"resolved",adminNote:"Resolved by master",adminBy:"Admin",adminDate:today()}}:x));addLog("APPEAL_RESOLVE",`Resolved appeal on ${r.id}`);toast("✅ Appeal resolved.");}} style={{background:"rgba(201,168,76,0.2)",border:"1px solid rgba(201,168,76,0.4)",color:"#c9a84c",borderRadius:6,padding:"4px 10px",cursor:"pointer",fontSize:11}}>📌 Resolve</button>
-                  <button onClick={()=>{setSundayReports(rs=>rs.map(x=>x.id===r.id?{...x,appeal:{...x.appeal,status:"resubmit",adminNote:"Return for correction",adminBy:"Admin",adminDate:today()}}:x));addLog("APPEAL_RESUBMIT",`Returned appeal on ${r.id}`);toast("🔄 Returned for correction.");}} style={{background:"rgba(41,128,185,0.2)",border:"1px solid rgba(41,128,185,0.4)",color:"#2980b9",borderRadius:6,padding:"4px 10px",cursor:"pointer",fontSize:11}}>🔄 Return</button>
+                  <button onClick={async ()=>{const nr=sundayReports.map(x=>x.id===r.id?{...x,appeal:{...x.appeal,status:"accepted",adminNote:"Accepted by master",adminBy:"Admin",adminDate:today()}}:x);setSundayReports(nr);addLog("APPEAL_ACCEPT",`Accepted appeal on ${r.id}`);toast("✅ Appeal accepted.");try{await supabase.from("app_state").upsert({key:"sundayReports",value:nr,updated_at:new Date().toISOString()},{onConflict:"key"});sbCancelPending("sundayReports");}catch(e){console.error(e);}}} style={{background:"rgba(39,174,96,0.2)",border:"1px solid rgba(39,174,96,0.4)",color:"#27ae60",borderRadius:6,padding:"4px 10px",cursor:"pointer",fontSize:11}}>✅ Accept</button>
+                  <button onClick={async ()=>{const nr=sundayReports.map(x=>x.id===r.id?{...x,appeal:{...x.appeal,status:"resolved",adminNote:"Resolved by master",adminBy:"Admin",adminDate:today()}}:x);setSundayReports(nr);addLog("APPEAL_RESOLVE",`Resolved appeal on ${r.id}`);toast("✅ Appeal resolved.");try{await supabase.from("app_state").upsert({key:"sundayReports",value:nr,updated_at:new Date().toISOString()},{onConflict:"key"});sbCancelPending("sundayReports");}catch(e){console.error(e);}}} style={{background:"rgba(201,168,76,0.2)",border:"1px solid rgba(201,168,76,0.4)",color:"#c9a84c",borderRadius:6,padding:"4px 10px",cursor:"pointer",fontSize:11}}>📌 Resolve</button>
+                  <button onClick={async ()=>{const nr=sundayReports.map(x=>x.id===r.id?{...x,appeal:{...x.appeal,status:"resubmit",adminNote:"Return for correction",adminBy:"Admin",adminDate:today()}}:x);setSundayReports(nr);addLog("APPEAL_RESUBMIT",`Returned appeal on ${r.id}`);toast("🔄 Returned for correction.");try{await supabase.from("app_state").upsert({key:"sundayReports",value:nr,updated_at:new Date().toISOString()},{onConflict:"key"});sbCancelPending("sundayReports");}catch(e){console.error(e);}}} style={{background:"rgba(41,128,185,0.2)",border:"1px solid rgba(41,128,185,0.4)",color:"#2980b9",borderRadius:6,padding:"4px 10px",cursor:"pointer",fontSize:11}}>🔄 Return</button>
                 </>
               )}
               {r.appeal&&r.appeal.status!=="pending"&&(
-                <select value={r.appeal.status} onChange={e=>{const s=e.target.value;setSundayReports(rs=>rs.map(x=>x.id===r.id?{...x,appeal:{...x.appeal,status:s,adminDate:today()}}:x));addLog("APPEAL_STATUS",`Changed appeal ${r.id} → ${s}`);toast("✅ Appeal status updated.");}} style={{background:"#1a1a2e",color:"#c9a84c",border:"1px solid rgba(201,168,76,0.4)",borderRadius:6,padding:"4px 8px",fontSize:11,cursor:"pointer"}}>
+                <select value={r.appeal.status} onChange={async e=>{const s=e.target.value;const nr=sundayReports.map(x=>x.id===r.id?{...x,appeal:{...x.appeal,status:s,adminDate:today()}}:x);setSundayReports(nr);addLog("APPEAL_STATUS",`Changed appeal ${r.id} → ${s}`);toast("✅ Appeal status updated.");try{await supabase.from("app_state").upsert({key:"sundayReports",value:nr,updated_at:new Date().toISOString()},{onConflict:"key"});sbCancelPending("sundayReports");}catch(e2){console.error(e2);}}} style={{background:"#1a1a2e",color:"#c9a84c",border:"1px solid rgba(201,168,76,0.4)",borderRadius:6,padding:"4px 8px",fontSize:11,cursor:"pointer"}}>
                   <option value="pending">pending</option>
                   <option value="accepted">accepted</option>
                   <option value="resolved">resolved</option>
@@ -4331,7 +4541,7 @@ function MasterRecords({ requests, setRequests, leaves, setLeaves, sundayReports
               </div>
               <div style={{display:"flex",gap:8,marginTop:10}}>
                 <button onClick={()=>setEditing(null)} style={{background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.15)",color:"#fff",borderRadius:6,padding:"5px 12px",cursor:"pointer",fontSize:12}}>Cancel</button>
-                <button onClick={()=>{setSundayReports(rs=>rs.map(x=>x.id===r.id?editing.data:x));addLog("EDIT_SUNDAY",`Edited Sunday report ${r.id}`);toast("✅ Report updated.");setEditing(null);}} style={{background:"#c9a84c",border:"none",color:"#0b1f3a",borderRadius:6,padding:"5px 14px",cursor:"pointer",fontWeight:700,fontSize:12}}>Save →</button>
+                <button onClick={async ()=>{const nr=sundayReports.map(x=>x.id===r.id?editing.data:x);setSundayReports(nr);addLog("EDIT_SUNDAY",`Edited Sunday report ${r.id}`);toast("✅ Report updated.");setEditing(null);try{await supabase.from("app_state").upsert({key:"sundayReports",value:nr,updated_at:new Date().toISOString()},{onConflict:"key"});sbCancelPending("sundayReports");}catch(e){console.error(e);}}} style={{background:"#c9a84c",border:"none",color:"#0b1f3a",borderRadius:6,padding:"5px 14px",cursor:"pointer",fontWeight:700,fontSize:12}}>Save →</button>
               </div>
             </div>
           )}
@@ -4682,24 +4892,32 @@ function MasterAppointments({ users, setUsers, toast, addLog }) {
     }
   };
 
-  const revert = (pastorId, position) => {
+  const revert = async (pastorId, position) => {
     const apptOn = today();
-    setUsers(us => us.map(u => {
-      // Suspend the office account
-      if(u.role===position.role && u.category==="office" && u._apptAccount)
-        return { ...u, approved:false, suspendedOn:apptOn };
-      // Clear appointment + temp pw from pastor profile
-      // If secretary, reactivate their pastor account
-      if(u.id===pastorId)
-        return { ...u, appointment:null, _apptTempPw:null, _apptTempEmail:null, _apptTempRole:null,
-          approved: u._suspendedForAppt ? true : u.approved,
-          _suspendedForAppt: undefined,
-          appointmentHistory:[...(u.appointmentHistory||[]),
-            { role:position.role, from:u.appointment?.appointedOn||"—", to:apptOn }] };
-      return u;
-    }));
+    const latestUsers = await new Promise(resolve => {
+      setUsers(us => {
+        const next = us.map(u => {
+          if(u.role===position.role && u.category==="office" && u._apptAccount)
+            return { ...u, approved:false, suspendedOn:apptOn };
+          if(u.id===pastorId)
+            return { ...u, appointment:null, _apptTempPw:null, _apptTempEmail:null, _apptTempRole:null,
+              approved: u._suspendedForAppt ? true : u.approved,
+              _suspendedForAppt: undefined,
+              appointmentHistory:[...(u.appointmentHistory||[]),
+                { role:position.role, from:u.appointment?.appointedOn||"—", to:apptOn }] };
+          return u;
+        });
+        resolve(next); return next;
+      });
+    });
     addLog("REVERT", "Reverted "+position.label+" back to Pastor");
-    toast("✅ Reverted to Pastor. Office account suspended.");
+    try {
+      const payload = latestUsers.map(u=>({...u,photo:null,signatureImage:null}));
+      const { error } = await supabase.from("app_state")
+        .upsert({ key:"users", value:payload, updated_at:new Date().toISOString() }, { onConflict:"key" });
+      if(error) toast("⚠️ Reverted locally but DB sync failed: "+error.message,"danger");
+      else { sbCancelPending("users"); toast("✅ Reverted to Pastor. Office account suspended."); }
+    } catch(e) { toast("⚠️ Reverted locally but DB unreachable.","danger"); }
   };
 
   return (
@@ -4801,7 +5019,16 @@ function MasterCustomRoles({ customRoles, setCustomRoles, customDepts, setCustom
   const inp = { background:"#1a1a2e", color:"#fff", border:"1px solid rgba(255,255,255,0.2)", borderRadius:8, padding:"8px 12px", fontSize:13 };
   const allDepts = getAllDepartments();
 
-  const addDept = () => {
+  const saveToDB = async (key, value) => {
+    try {
+      const { error } = await supabase.from("app_state")
+        .upsert({ key, value, updated_at:new Date().toISOString() }, { onConflict:"key" });
+      if(error) toast("⚠️ Saved locally but DB sync failed: "+error.message,"danger");
+      else sbCancelPending(key);
+    } catch(e) { toast("⚠️ Saved locally but DB unreachable.","danger"); }
+  };
+
+  const addDept = async () => {
     const label = deptLabel.trim();
     if(!label){ toast("Please enter a department name","danger"); return; }
     if(allDepts.find(d=>d.label.toLowerCase()===label.toLowerCase())){ toast("Department already exists","danger"); return; }
@@ -4811,18 +5038,20 @@ function MasterCustomRoles({ customRoles, setCustomRoles, customDepts, setCustom
     addLog("ADD_DEPT", `Added department: ${label}`);
     toast(`✅ "${label}" department added.`);
     setDeptLabel("");
+    await saveToDB("customDepts", updated);
   };
 
-  const saveDeptEdit = () => {
+  const saveDeptEdit = async () => {
     const label = editDept.label.trim();
     if(!label){ toast("Name cannot be empty","danger"); return; }
     const updated = customDepts.map((d,i)=>i===editDept.idx?{...d,label}:d);
     setCustomDepts(updated); setCustomDeptsCache(updated);
     addLog("EDIT_DEPT", `Renamed department to: ${label}`);
     toast(`✅ Renamed to "${label}"`); setEditDept(null);
+    await saveToDB("customDepts", updated);
   };
 
-  const deleteDept = (idx) => {
+  const deleteDept = async (idx) => {
     const dept = customDepts[idx];
     const inUse = users.filter(u=>u.dept===dept.id).length;
     if(inUse>0&&!window.confirm(`${inUse} staff in this department. Delete anyway?`)) return;
@@ -4830,35 +5059,42 @@ function MasterCustomRoles({ customRoles, setCustomRoles, customDepts, setCustom
     setCustomDepts(updated); setCustomDeptsCache(updated);
     addLog("DELETE_DEPT", `Deleted department: ${dept.label}`);
     toast(`🗑️ "${dept.label}" removed.`);
+    await saveToDB("customDepts", updated);
   };
 
-  const addRole = () => {
+  const addRole = async () => {
     const t = roleTitle.trim();
     if(!t){ toast("Please enter a job title","danger"); return; }
     if(!roleDept){ toast("Please select a department","danger"); return; }
     const allTitles = [...BUILTIN_OFFICE_ROLES.map(r=>r.title.toLowerCase()), ...customRoles.map(r=>r.title.toLowerCase())];
     if(allTitles.includes(t.toLowerCase())){ toast("Title already exists","danger"); return; }
-    setCustomRoles(r=>[...r,{ title:t, dept:roleDept, addedOn:today() }]);
+    const updated = [...customRoles, { title:t, dept:roleDept, addedOn:today() }];
+    setCustomRoles(updated);
     addLog("ADD_CUSTOM_ROLE", `Added role: ${t}`);
     toast(`✅ "${t}" added.`);
     setRoleTitle(""); setRoleDept("");
+    await saveToDB("customRoles", updated);
   };
 
-  const saveRoleEdit = () => {
+  const saveRoleEdit = async () => {
     const t = editRole.title.trim();
     if(!t){ toast("Title cannot be empty","danger"); return; }
-    setCustomRoles(rs=>rs.map((r,i)=>i===editRole.idx?{...r,title:t,dept:editRole.dept}:r));
+    const updated = customRoles.map((r,i)=>i===editRole.idx?{...r,title:t,dept:editRole.dept}:r);
+    setCustomRoles(updated);
     addLog("EDIT_CUSTOM_ROLE", `Renamed role to: ${t}`);
     toast(`✅ Role updated to "${t}"`); setEditRole(null);
+    await saveToDB("customRoles", updated);
   };
 
-  const deleteRole = (idx) => {
+  const deleteRole = async (idx) => {
     const role = customRoles[idx];
     const inUse = users.filter(u=>u.jobTitle===role.title).length;
     if(inUse>0&&!window.confirm(`${inUse} staff have this title. Delete anyway?`)) return;
-    setCustomRoles(rs=>rs.filter((_,i)=>i!==idx));
+    const updated = customRoles.filter((_,i)=>i!==idx);
+    setCustomRoles(updated);
     addLog("DELETE_CUSTOM_ROLE", `Deleted role: ${role.title}`);
     toast(`🗑️ "${role.title}" removed.`);
+    await saveToDB("customRoles", updated);
   };
 
   const tabS = t => ({ padding:"8px 18px", border:"none", borderBottom:tab===t?"2px solid #c9a84c":"2px solid transparent", background:"none", color:tab===t?"#c9a84c":"rgba(255,255,255,0.4)", cursor:"pointer", fontSize:13, fontWeight:tab===t?700:400 });
@@ -5002,17 +5238,32 @@ function MasterStaff({ users, setUsers, toast, addLog }) {
 
   const openStaff = (u) => { setSel(u); setForm({...u}); setShowReset(false); setResetPw(""); };
 
-  const save = () => {
-    setUsers(us=>us.map(u=>u.id===sel.id?{...u,...form}:u));
+  const save = async () => {
+    const newUsers = users.map(u=>u.id===sel.id?{...u,...form}:u);
+    setUsers(newUsers);
     addLog("EDIT_STAFF",`Edited profile of ${sel.name}`);
-    toast("✅ Profile saved."); setSel(null);
+    setSel(null);
+    try {
+      const payload = newUsers.map(u=>({...u,photo:null,signatureImage:null}));
+      const { error } = await supabase.from("app_state")
+        .upsert({ key:"users", value:payload, updated_at:new Date().toISOString() }, { onConflict:"key" });
+      if(error) toast("⚠️ Saved locally but DB sync failed: "+error.message,"danger");
+      else { sbCancelPending("users"); toast("✅ Profile saved."); }
+    } catch(e) { toast("⚠️ Saved locally but DB unreachable.","danger"); }
   };
 
-  const toggleActive = (u) => {
+  const toggleActive = async (u) => {
     const newStatus = u.accountStatus==="suspended"?"active":"suspended";
-    setUsers(us=>us.map(x=>x.id===u.id?{...x,accountStatus:newStatus,approved:newStatus==="active"}:x));
+    const newUsers = users.map(x=>x.id===u.id?{...x,accountStatus:newStatus,approved:newStatus==="active"}:x);
+    setUsers(newUsers);
     addLog("TOGGLE_ACCOUNT",`${u.name} → ${newStatus}`);
-    toast(`Account ${newStatus==="active"?"reactivated":"suspended"}.`);
+    try {
+      const payload = newUsers.map(x=>({...x,photo:null,signatureImage:null}));
+      const { error } = await supabase.from("app_state")
+        .upsert({ key:"users", value:payload, updated_at:new Date().toISOString() }, { onConflict:"key" });
+      if(error) toast("⚠️ Status changed locally but DB sync failed: "+error.message,"danger");
+      else { sbCancelPending("users"); toast(`Account ${newStatus==="active"?"reactivated":"suspended"}.`); }
+    } catch(e) { toast("⚠️ Status changed locally but DB unreachable.","danger"); }
   };
 
   const deleteStaff = async (u) => {
@@ -5038,7 +5289,13 @@ function MasterStaff({ users, setUsers, toast, addLog }) {
   const doReset = async () => {
     if(!resetPw||resetPw.length<6){toast("Min 6 characters","danger");return;}
     const h = await hashPassword(resetPw);
-    setUsers(us=>us.map(u=>u.id===sel.id?{...u,password:h,mustChangePassword:true}:u));
+    const newUsers5264 = users.map(u=>u.id===sel.id?{...u,password:h,mustChangePassword:true}:u);
+    setUsers(newUsers5264);
+    try {
+      const payload5264 = newUsers5264.map(u=>({...u,photo:null,signatureImage:null}));
+      await supabase.from("app_state").upsert({key:"users",value:payload5264,updated_at:new Date().toISOString()},{onConflict:"key"});
+      sbCancelPending("users");
+    } catch(e2) { console.error("Password save error:",e2); }
     addLog("RESET_PASSWORD",`Reset password of ${sel.name}`);
     toast("✅ Password reset. They must change on next login.");
     setShowReset(false); setResetPw("");
@@ -5253,32 +5510,58 @@ function MasterLCC({ lccs, setLccs, users, setUsers, toast, addLog }) {
   const [renaming, setRenaming] = useState(null);
   const [renameTo, setRenameTo] = useState("");
 
-  const addLcc = () => {
+  const addLcc = async () => {
     const name = newLcc.trim().toUpperCase();
     if(!name||lccs.includes(name)){toast("Invalid or duplicate LCC name","danger");return;}
-    setLccs(ls=>[...ls,name]);
+    const newLccs = [...lccs, name];
+    setLccs(newLccs);
     addLog("ADD_LCC",`Added LCC: ${name}`);
-    toast("✅ LCC added: "+name);
     setNewLcc("");
+    try {
+      const { error } = await supabase.from("app_state")
+        .upsert({ key:"lccs", value:newLccs, updated_at:new Date().toISOString() }, { onConflict:"key" });
+      if(error) toast("⚠️ LCC added locally but DB save failed: "+error.message,"danger");
+      else { sbCancelPending("lccs"); toast("✅ LCC added: "+name); }
+    } catch(e) { toast("⚠️ LCC added locally but DB unreachable.","danger"); }
   };
 
-  const renameLcc = () => {
+  const renameLcc = async () => {
     const name = renameTo.trim().toUpperCase();
     if(!name||lccs.includes(name)){toast("Invalid name","danger");return;}
-    setLccs(ls=>ls.map(l=>l===renaming?name:l));
-    setUsers(us=>us.map(u=>u.lcc===renaming?{...u,lcc:name}:u));
+    const newLccs = lccs.map(l=>l===renaming?name:l);
+    const newUsers = users.map(u=>u.lcc===renaming?{...u,lcc:name}:u);
+    setLccs(newLccs);
+    setUsers(newUsers);
     addLog("RENAME_LCC",`Renamed LCC: ${renaming} → ${name}`);
-    toast(`✅ ${renaming} renamed to ${name}`);
     setRenaming(null); setRenameTo("");
+    try {
+      const usersPayload = newUsers.map(u=>({...u,photo:null,signatureImage:null}));
+      const [r1, r2] = await Promise.all([
+        supabase.from("app_state").upsert({ key:"lccs",  value:newLccs,    updated_at:new Date().toISOString() }, { onConflict:"key" }),
+        supabase.from("app_state").upsert({ key:"users", value:usersPayload, updated_at:new Date().toISOString() }, { onConflict:"key" }),
+      ]);
+      if(r1.error||r2.error) toast("⚠️ Renamed locally but DB save failed.","danger");
+      else { sbCancelPending("lccs"); sbCancelPending("users"); toast(`✅ ${renaming} renamed to ${name}`); }
+    } catch(e) { toast("⚠️ Renamed locally but DB unreachable.","danger"); }
   };
 
-  const deleteLcc = (lcc) => {
+  const deleteLcc = async (lcc) => {
     const count = users.filter(u=>u.lcc===lcc).length;
     if(count>0&&!window.confirm(`${lcc} has ${count} staff/pastors. Delete anyway? Their LCC will be cleared.`)) return;
-    setLccs(ls=>ls.filter(l=>l!==lcc));
-    setUsers(us=>us.map(u=>u.lcc===lcc?{...u,lcc:""}:u));
+    const newLccs = lccs.filter(l=>l!==lcc);
+    const newUsers = users.map(u=>u.lcc===lcc?{...u,lcc:""}:u);
+    setLccs(newLccs);
+    setUsers(newUsers);
     addLog("DELETE_LCC",`Deleted LCC: ${lcc}`);
-    toast(`🗑️ ${lcc} deleted.`);
+    try {
+      const usersPayload = newUsers.map(u=>({...u,photo:null,signatureImage:null}));
+      const [r1, r2] = await Promise.all([
+        supabase.from("app_state").upsert({ key:"lccs",  value:newLccs,    updated_at:new Date().toISOString() }, { onConflict:"key" }),
+        supabase.from("app_state").upsert({ key:"users", value:usersPayload, updated_at:new Date().toISOString() }, { onConflict:"key" }),
+      ]);
+      if(r1.error||r2.error) toast("⚠️ Deleted locally but DB save failed.","danger");
+      else { sbCancelPending("lccs"); sbCancelPending("users"); toast(`🗑️ ${lcc} deleted.`); }
+    } catch(e) { toast("⚠️ Deleted locally but DB unreachable.","danger"); }
   };
 
   return (
@@ -5330,10 +5613,17 @@ function MasterAnnounce({ announcements, setAnnouncements, users, banner, setBan
     toast(newVal?"🚨 Banner is now ON — all users will see it.":"✅ Banner is now OFF.");
   };
 
-  const deleteAnn = (id) => {
-    setAnnouncements(as=>as.filter(a=>a.id!==id));
+  const deleteAnn = async (id) => {
+    const newAnns = await new Promise(resolve => {
+      setAnnouncements(as => { const next=as.filter(a=>a.id!==id); resolve(next); return next; });
+    });
     addLog("DELETE_ANN",`Deleted announcement ${id}`);
-    toast("🗑️ Announcement deleted.");
+    try {
+      const { error } = await supabase.from("app_state")
+        .upsert({ key:"announcements", value:newAnns, updated_at:new Date().toISOString() }, { onConflict:"key" });
+      if(error) toast("⚠️ Deleted locally but DB sync failed: "+error.message,"danger");
+      else { sbCancelPending("announcements"); toast("🗑️ Announcement deleted."); }
+    } catch(e) { toast("⚠️ Deleted locally but DB unreachable.","danger"); }
   };
 
   return (
@@ -5894,54 +6184,55 @@ export default function App() {
         if (data && data.length > 0) {
           const map = Object.fromEntries(data.map(r => [r.key, r.value]));
           if (map.users) {
-            // ── One-time data migration (runs every load; idempotent) ────────────
+            // ── One-time data migration — skipped once DB confirms it's done ──────
             let migrated = map.users;
-
-            // 1. Remove ONE duplicate wasuku@ecwalafia.org (keep the first occurrence)
-            const seenWasuku = new Set();
-            migrated = migrated.filter(u => {
-              if (u.email === "wasuku@ecwalafia.org") {
-                if (seenWasuku.has("wasuku")) return false; // drop duplicate
-                seenWasuku.add("wasuku");
+            const migrationDone = map["migration_v1_done"] === true;
+            if (!migrationDone) {
+              // 1. Remove ONE duplicate wasuku@ecwalafia.org (keep first)
+              const seenWasuku = new Set();
+              migrated = migrated.filter(u => {
+                if (u.email === "wasuku@ecwalafia.org") {
+                  if (seenWasuku.has("wasuku")) return false;
+                  seenWasuku.add("wasuku");
+                }
+                return true;
+              });
+              // 2. Remap old generated IDs → clean numeric IDs
+              const ID_MAP = { "1780317397852": 30, "1780334790289": 31 };
+              migrated = migrated.map(u => {
+                const newId = ID_MAP[String(u.id)];
+                return newId !== undefined ? { ...u, id: newId } : u;
+              });
+              // 3. Add Tuwan Joshua Gulek (id 29) if not already present
+              const tuwanExists = migrated.some(u => u.id === 29 || u.email === "tuwan@ecwalafia.org");
+              if (!tuwanExists) {
+                migrated = [...migrated, {
+                  id: 29, dob: "1966-06-29", doj: "1999-09-01", lcc: "Lafia", lga: "", dept: "",
+                  docs: {}, name: "Tuwan Joshua Gulek", rank: "Reverend", role: "pastor",
+                  email: "tuwan@ecwalafia.org", lc_ph: "ECWA Goodnews GRA", phone: "08036420945",
+                  photo: null, tribe: "", gender: "", address: "", nokName: "", approved: true,
+                  category: "pastor", jobTitle: "", nokPhone: "",
+                  password: "pbkdf2$0330c4b6f575223f3d586e4ac3575ac8$3c6abb345ce27f152beb9154180da1f4bfa90ea5230f52f510d08b70db31b7d2",
+                  gradeLevel: "ESSP/10", nokAddress: "", institution: "", nationality: "Nigerian",
+                  nokRelation: "", gradePending: false, lcc_overseen: "", accountStatus: "active",
+                  maritalStatus: "", stateOfOrigin: "", yearGraduated: "", signatureImage: null,
+                  transferHistory: [], customDocSections: [], otherQualifications: "",
+                  highestQualification: ""
+                }];
               }
-              return true;
-            });
-
-            // 2. Remap old generated IDs → clean numeric IDs
-            const ID_MAP = { "1780317397852": 30, "1780334790289": 31 };
-            migrated = migrated.map(u => {
-              const newId = ID_MAP[String(u.id)];
-              return newId !== undefined ? { ...u, id: newId } : u;
-            });
-
-            // 3. Add Tuwan Joshua Gulek (id 29) if not already present
-            const tuwanExists = migrated.some(u => u.id === 29 || u.email === "tuwan@ecwalafia.org");
-            if (!tuwanExists) {
-              migrated = [...migrated, {
-                id: 29, dob: "1966-06-29", doj: "1999-09-01", lcc: "Lafia", lga: "", dept: "",
-                docs: {}, name: "Tuwan Joshua Gulek", rank: "Reverend", role: "pastor",
-                email: "tuwan@ecwalafia.org", lc_ph: "ECWA Goodnews GRA", phone: "08036420945",
-                photo: null, tribe: "", gender: "", address: "", nokName: "", approved: true,
-                category: "pastor", jobTitle: "", nokPhone: "",
-                password: "pbkdf2$0330c4b6f575223f3d586e4ac3575ac8$3c6abb345ce27f152beb9154180da1f4bfa90ea5230f52f510d08b70db31b7d2",
-                gradeLevel: "ESSP/10", nokAddress: "", institution: "", nationality: "Nigerian",
-                nokRelation: "", gradePending: false, lcc_overseen: "", accountStatus: "active",
-                maritalStatus: "", stateOfOrigin: "", yearGraduated: "", signatureImage: null,
-                transferHistory: [], customDocSections: [], otherQualifications: "",
-                highestQualification: ""
-              }];
+              // Save migrated users + set flag so migration never runs again
+              (async () => {
+                try {
+                  const payload = migrated.map(u => ({ ...u, photo: null, signatureImage: null }));
+                  await Promise.all([
+                    supabase.from("app_state").upsert({ key:"users", value:payload, updated_at:new Date().toISOString() }, { onConflict:"key" }),
+                    supabase.from("app_state").upsert({ key:"migration_v1_done", value:true, updated_at:new Date().toISOString() }, { onConflict:"key" }),
+                  ]);
+                  sbCancelPending("users");
+                } catch(e) { console.error("Migration save error:", e); }
+              })();
             }
-
-            // Save migration result back to Supabase immediately, then cancel pending auto-save
-            (async () => {
-              try {
-                const payload = migrated.map(u => ({ ...u, photo: null, signatureImage: null }));
-                await supabase.from("app_state")
-                  .upsert({ key: "users", value: payload, updated_at: new Date().toISOString() }, { onConflict: "key" });
-                sbCancelPending("users");
-              } catch(e) { console.error("Migration save error:", e); }
-            })();
-            // ────────────────────────────────────────────────────────────────────
+            // ─────────────────────────────────────────────────────────────────────
 
             if (assets && assets.length > 0) {
               const assetMap = Object.fromEntries(assets.map(a => [String(a.user_id), a]));
