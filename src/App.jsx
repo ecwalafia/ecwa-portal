@@ -402,8 +402,8 @@ const PUBLIC_HOLIDAYS_2026 = [
   { date:"2026-04-03", name:"Good Friday" },
   { date:"2026-04-06", name:"Easter Monday" },
   { date:"2026-05-01", name:"Workers' Day" },
-  { date:"2026-06-07", name:"Eid el-Kabir (Day 1)" },
-  { date:"2026-06-08", name:"Eid el-Kabir (Day 2)" },
+  { date:"2026-05-27", name:"Eid el-Kabir (Day 1)" },
+  { date:"2026-05-28", name:"Eid el-Kabir (Day 2)" },
   { date:"2026-06-12", name:"Democracy Day" },
   { date:"2026-09-05", name:"Maulud (Prophet's Birthday)" },
   { date:"2026-10-01", name:"Independence Day" },
@@ -418,7 +418,7 @@ const getAttStatus = (dateStr, records, leaves, userId) => {
   if(dow===0||dow===6) return "weekend";
   if(PUBLIC_HOLIDAYS_2026.find(h=>h.date===dateStr)) return "holiday";
   // Check approved leave
-  const onLeave = leaves.find(l=>l.requesterEmail&&l.status==="approved"&&l.startDate<=dateStr&&l.endDate>=dateStr);
+  const onLeave = leaves.find(l=>l.requesterEmail&&l.status==="approved"&&l.startDate<=dateStr&&l.endDate>=dateStr&&l.requesterEmail===userId);
   if(onLeave) return "leave";
   const rec = records.find(r=>r.userId===userId&&r.date===dateStr);
   if(!rec) return "absent";
@@ -3279,7 +3279,7 @@ function AttendanceMod({ user, users, attendance, setAttendance, leaves, toast }
         </div>
         <div style={{padding:"16px 20px",display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:10}}>
           {weekDates.map(d=>{
-            const status = getAttStatus(d,[...attendance],leaves,user.id);
+            const status = getAttStatus(d,[...attendance],leaves,user.email);
             const rec = attendance.find(r=>r.userId===user.id&&r.date===d);
             const st = ATT_STYLE[status];
             const ph = PUBLIC_HOLIDAYS_2026.find(h=>h.date===d);
@@ -3329,7 +3329,7 @@ function AttendanceMod({ user, users, attendance, setAttendance, leaves, toast }
                       <div style={{fontSize:10,color:"#aaa"}}>{roleDisplay(u.role)}</div>
                     </td>
                     {weekDates.map(d=>{
-                      const status=getAttStatus(d,attendance,leaves,u.id);
+                      const status=getAttStatus(d,attendance,leaves,u.email);
                       const rec=attendance.find(r=>r.userId===u.id&&r.date===d);
                       const st=ATT_STYLE[status];
                       return(
